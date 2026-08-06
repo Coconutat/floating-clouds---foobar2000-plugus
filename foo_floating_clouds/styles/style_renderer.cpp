@@ -168,8 +168,21 @@ void StyleRenderer::draw_button_row(const CSize& size)
 
     for (int i = 0; i < btn_count; i++) {
         float btn_x = btn_start_x + i * (BUTTON_SIZE + btn_spacing);
+
+        // MD3 state: pressed > hover > normal.
+        int state = (m_window->get_pressed_button() == i) ? 2
+                  : (m_window->get_hover_button() == i)  ? 1 : 0;
+
+        // Icon color: playing play/pause -> primary; muted volume -> error.
+        D2D1_COLOR_F icon_color = D2DRenderer::hex(md3::on_surface_variant, 0.95f);
+        if (i == 1 && m_window->is_playing() && !m_window->is_paused()) {
+            icon_color = D2DRenderer::hex(md3::primary, 1.0f);
+        } else if (i == 3 && m_window->is_volume_muted()) {
+            icon_color = D2DRenderer::hex(md3::error, 1.0f);
+        }
+
         m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, icons[i], active[i],
-                                D2DRenderer::hex(md3::on_surface_variant, 0.95f));
+                                icon_color, state);
     }
 }
 

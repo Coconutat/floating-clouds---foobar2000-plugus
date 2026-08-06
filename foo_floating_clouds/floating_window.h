@@ -37,6 +37,7 @@ public:
         MSG_WM_LBUTTONDOWN(OnLButtonDown)
         MSG_WM_LBUTTONUP(OnLButtonUp)
         MSG_WM_MOUSEMOVE(OnMouseMove)
+        MESSAGE_HANDLER(WM_MOUSELEAVE, OnMouseLeave)
         MSG_WM_SETCURSOR(OnSetCursor)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
@@ -96,6 +97,9 @@ public:
     float get_volume() const { return m_volume; }
     // Eased progress value shown to the user (0..1), animated by the frame loop
     float get_display_progress() const { return m_display_progress; }
+    // Hovered / pressed control-button index (MD3 state feedback), -1 if none
+    int get_hover_button() const { return m_hover_button; }
+    int get_pressed_button() const { return m_pressed_button; }
 
 private:
     // Window event handlers
@@ -108,6 +112,7 @@ private:
     void OnLButtonDown(UINT nFlags, CPoint point);
     void OnLButtonUp(UINT nFlags, CPoint point);
     void OnMouseMove(UINT nFlags, CPoint point);
+    LRESULT OnMouseLeave(UINT, WPARAM, LPARAM, BOOL&);
     BOOL OnSetCursor(CWindow wnd, UINT nHitTest, UINT message);
     LRESULT OnHotKey(UINT msg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnDisplayChange(UINT msg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -118,6 +123,9 @@ private:
     void start_anim_timer();
     void stop_anim_timer();
     void on_anim_tick();
+    // Button hover feedback (polls while the cursor is over a button)
+    void on_hover_tick();
+    void clear_hover_state();
 
     // Calculate window size based on current style
     CSize calculate_size();
@@ -164,6 +172,11 @@ private:
     float m_target_progress = 0.0f;    // real playback progress target
     UINT_PTR m_anim_timer = 0;
     double m_last_anim_tick = 0.0;
+
+    // Button hover/pressed state (MD3 state-layer feedback)
+    int m_hover_button = -1;
+    int m_pressed_button = -1;
+    bool m_hover_tracking = false;
 
     // Process-wide pointer to the active window (so Preferences can reload hotkeys)
     static FloatingCloudsWindow* s_instance;

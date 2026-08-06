@@ -71,6 +71,7 @@ constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS
 // Message constants
 constexpr UINT FC_WM_TRAY_NOTIFY = WM_APP + 1;
 constexpr UINT FC_TRAY_ID = 0x9001;
+constexpr UINT FC_HOVER_TIMER = 2; // polling timer for button hover feedback (anim timer uses 1)
 
 // Window sizing
 constexpr int32_t WINDOW_MIN_WIDTH = 200;

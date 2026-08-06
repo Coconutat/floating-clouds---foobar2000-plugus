@@ -45,9 +45,9 @@ public:
     // Draw album art
     void draw_album_art(float x, float y, float size, album_art_data_ptr art);
     
-    // Draw a control button (circle with icon)
+    // Draw a control button (circle with icon). state: 0 normal, 1 hover, 2 pressed.
     void draw_button(float x, float y, float size, const wchar_t* icon_text,
-                     bool is_active, const D2D1_COLOR_F& color);
+                     bool is_active, const D2D1_COLOR_F& color, int state = 0);
     
     // Draw a rounded progress ring
     void draw_progress_ring(float cx, float cy, float radius, float thickness,

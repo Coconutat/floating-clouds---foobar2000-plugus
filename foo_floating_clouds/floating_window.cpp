@@ -170,11 +170,30 @@ void FloatingCloudsWindow::OnLButtonDown(UINT nFlags, CPoint point)
         m_dragging = true;
         m_drag_offset = point;
         SetCapture();
+        return;
+    }
+    
+    // MD3 state feedback: pressed highlight on the button under the cursor.
+    if (style_has_buttons(m_current_style)) {
+        int btn = hit_test_button(point);
+        if (btn >= 0) {
+            m_pressed_button = btn;
+            if (!m_hover_tracking) {
+                m_hover_tracking = true;
+                SetTimer(FC_HOVER_TIMER, 40, NULL);
+            }
+            Invalidate();
+        }
     }
 }
 
 void FloatingCloudsWindow::OnLButtonUp(UINT nFlags, CPoint point)
 {
+    if (m_pressed_button != -1) {
+        m_pressed_button = -1;
+        Invalidate();
+    }
+    
     if (m_dragging) {
         m_dragging = false;
         ReleaseCapture();
@@ -217,7 +236,66 @@ void FloatingCloudsWindow::OnMouseMove(UINT nFlags, CPoint point)
         int new_y = screen_pt.y - m_drag_offset.y;
         
         SetWindowPos(NULL, new_x, new_y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        return;
     }
+    
+    // MD3 state feedback: the window only receives mouse messages while the
+    // cursor is over a button (other areas are click-through). Start polling so
+    // the hover highlight also clears when the cursor leaves the button row.
+    if (style_has_buttons(m_current_style)) {
+        int btn = hit_test_button(point);
+        if (btn >= 0) {
+            if (btn != m_hover_button) { m_hover_button = btn; Invalidate(); }
+            if (!m_hover_tracking) {
+                m_hover_tracking = true;
+                SetTimer(FC_HOVER_TIMER, 40, NULL);
+            }
+        }
+    }
+}
+
+LRESULT FloatingCloudsWindow::OnMouseLeave(UINT, WPARAM, LPARAM, BOOL& bHandled)
+{
+    if (m_hover_button != -1) { m_hover_button = -1; Invalidate(); }
+    if (m_hover_tracking) { KillTimer(FC_HOVER_TIMER); m_hover_tracking = false; }
+    bHandled = TRUE;
+    return 0;
+}
+
+void FloatingCloudsWindow::on_hover_tick()
+{
+    if (!IsWindow()) return;
+
+    CPoint sp;
+    ::GetCursorPos(&sp);
+
+    CRect rc;
+    GetWindowRect(&rc);
+    if (!rc.PtInRect(sp)) {
+        // Cursor left the window entirely.
+        if (m_hover_button != -1) { m_hover_button = -1; Invalidate(); }
+        if (m_hover_tracking) { KillTimer(FC_HOVER_TIMER); m_hover_tracking = false; }
+        return;
+    }
+
+    ScreenToClient(&sp);
+    int btn = style_has_buttons(m_current_style) ? hit_test_button(sp) : -1;
+    if (btn != m_hover_button) {
+        m_hover_button = btn;
+        Invalidate();
+    }
+
+    if (btn < 0 && m_pressed_button < 0) {
+        // No button under the cursor and nothing pressed -> stop polling.
+        if (m_hover_tracking) { KillTimer(FC_HOVER_TIMER); m_hover_tracking = false; }
+    }
+}
+
+void FloatingCloudsWindow::clear_hover_state()
+{
+    m_hover_button = -1;
+    m_pressed_button = -1;
+    if (m_hover_tracking) { KillTimer(FC_HOVER_TIMER); m_hover_tracking = false; }
 }
 
 BOOL FloatingCloudsWindow::OnSetCursor(CWindow wnd, UINT nHitTest, UINT message)
@@ -328,9 +406,13 @@ void FloatingCloudsWindow::stop_anim_timer()
     }
 }
 
-LRESULT FloatingCloudsWindow::OnTimer(UINT, WPARAM, LPARAM, BOOL& bHandled)
+LRESULT FloatingCloudsWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& bHandled)
 {
-    on_anim_tick();
+    if (wParam == FC_HOVER_TIMER) {
+        on_hover_tick();
+    } else {
+        on_anim_tick();
+    }
     bHandled = TRUE;
     return 0;
 }
@@ -393,6 +475,7 @@ void FloatingCloudsWindow::cycle_style()
 void FloatingCloudsWindow::set_style(FloatingStyle style)
 {
     m_current_style = style;
+    clear_hover_state(); // stale hover/pressed must not carry across styles
     
     // Save style preference
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);

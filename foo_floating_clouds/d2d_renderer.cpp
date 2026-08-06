@@ -293,7 +293,7 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
 }
 
 void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_text,
-                               bool is_active, const D2D1_COLOR_F& color)
+                               bool is_active, const D2D1_COLOR_F& color, int state)
 {
     // Circle background (MD3 icon-button tonal fill)
     D2D1_COLOR_F bg_color = is_active ? 
@@ -304,6 +304,14 @@ void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_
     float radius = size / 2;
     m_render_target->FillEllipse(
         D2D1::Ellipse(D2D1::Point2F(x + radius, y + radius), radius, radius), m_brush);
+
+    // MD3 state layer: hover 8% / pressed 12% on-surface overlay.
+    if (state > 0) {
+        float layer_a = (state >= 2) ? md3::pressed_state : md3::hover_state;
+        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, layer_a));
+        m_render_target->FillEllipse(
+            D2D1::Ellipse(D2D1::Point2F(x + radius, y + radius), radius, radius), m_brush);
+    }
     
     // Icon text (simple Unicode symbols or just text)
     if (icon_text && wcslen(icon_text) > 0) {
