@@ -276,12 +276,7 @@ void FloatingCloudsWindow::toggle_drag_mode()
     m_drag_mode = !m_drag_mode;
     
     if (m_drag_mode) {
-        // Enter drag mode - remove transparency
-        ModifyStyleEx(WS_EX_TRANSPARENT, 0);
         SetCursor(LoadCursor(NULL, IDC_SIZEALL));
-    } else {
-        // Exit drag mode - restore transparency
-        ModifyStyleEx(0, WS_EX_TRANSPARENT);
     }
 }
 
@@ -373,10 +368,20 @@ void FloatingCloudsWindow::on_anim_tick()
     if (changed) {
         update_layered_window();
         Invalidate();
-    } else {
-        if (!m_visible) ShowWindow(SW_HIDE); // fade-out finished
-        stop_anim_timer();
+        return; // keep the frame loop for the next frame
     }
+
+    // Nothing is animating (progress/opacity settled).
+    if (!m_visible) {
+        ShowWindow(SW_HIDE); // fade-out finished
+        stop_anim_timer();
+        return;
+    }
+    if (m_marquee_active) {
+        Invalidate(); // keep redrawing to advance the scrolling title
+        return;       // keep the frame loop running
+    }
+    stop_anim_timer();
 }
 
 void FloatingCloudsWindow::cycle_style()

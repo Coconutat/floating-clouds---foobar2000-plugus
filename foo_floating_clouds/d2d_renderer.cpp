@@ -92,6 +92,8 @@ bool D2DRenderer::create_resources()
 bool D2DRenderer::begin_draw()
 {
     if (!create_resources()) return false;
+
+    m_marquee_active = false; // reset per frame
     
     m_render_target->BeginDraw();
     m_render_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -131,14 +133,55 @@ void D2DRenderer::draw_rounded_rect(const D2D1_RECT_F& rect, float radius,
 void D2DRenderer::draw_text(const wchar_t* text, float x, float y, float width, float height,
                              IDWriteTextFormat* format, const D2D1_COLOR_F& color)
 {
-    if (!format) return;
-    
+    if (!format || !text) return;
+
+    // Text wider than its box auto-scrolls (marquee) instead of clipping.
+    if (width > 0) {
+        float tw = measure_text_width(text, format);
+        if (tw > width) {
+            draw_text_marquee(text, x, y, width, height, format, color);
+            return;
+        }
+    }
+
     m_brush->SetColor(color);
     
     D2D1_RECT_F rect = D2D1::RectF(x, y, x + width, y + height);
     // CLIP keeps overflowing single-line text from drawing outside its box.
     m_render_target->DrawText(text, (UINT32)wcslen(text), format, rect, m_brush,
                               D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+void D2DRenderer::draw_text_marquee(const wchar_t* text, float x, float y, float width, float height,
+                                     IDWriteTextFormat* format, const D2D1_COLOR_F& color)
+{
+    m_marquee_active = true;
+    const float tw = measure_text_width(text, format);
+
+    // Gentle marquee: pause, scroll left, pause, restart.
+    const float gap = 24.0f;
+    const double start_pause = 1000.0;  // ms before scrolling begins
+    const double end_pause = 800.0;     // ms after the text has scrolled out
+    const double speed_px_s = 28.0;
+    const double travel = (double)tw + gap;
+    const double scroll_ms = travel / speed_px_s * 1000.0;
+    const double cycle = start_pause + scroll_ms + end_pause;
+
+    const double phase = fmod((double)GetTickCount64(), cycle);
+    float offset = 0.0f;
+    if (phase >= start_pause + scroll_ms) {
+        offset = (float)travel;   // end pause: text fully scrolled out
+    } else if (phase >= start_pause) {
+        offset = (float)((phase - start_pause) / scroll_ms * travel);
+    }                             // start pause: offset = 0
+
+    m_brush->SetColor(color);
+    m_render_target->PushAxisAlignedClip(
+        D2D1::RectF(x, y, x + width, y + height), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    D2D1_RECT_F rect = D2D1::RectF(x - offset, y, x - offset + 10000.0f, y + height);
+    m_render_target->DrawText(text, (UINT32)wcslen(text), format, rect, m_brush,
+                              D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    m_render_target->PopAxisAlignedClip();
 }
 
 float D2DRenderer::measure_text_width(const wchar_t* text, IDWriteTextFormat* format)

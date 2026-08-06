@@ -14,9 +14,11 @@
 // NOTE: CWindowImpl<T> defaults to CControlWinTraits, which forces WS_CHILD.
 // A WS_CHILD window with no parent is never shown on the desktop, so we must
 // explicitly use top-level window traits (WS_POPUP) here.
+// WS_EX_TRANSPARENT is intentionally NOT set on the layered window (MSDN: it
+// forces full mouse pass-through); click-through comes from WM_NCHITTEST.
 class FloatingCloudsWindow :
     public CWindowImpl<FloatingCloudsWindow, CWindow,
-        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
+        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
     public D2DRenderer
 {
 public:

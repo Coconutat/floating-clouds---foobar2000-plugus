@@ -61,8 +61,12 @@ constexpr int32_t DEFAULT_STYLE = static_cast<int32_t>(FloatingStyle::Full);
 constexpr int32_t DEFAULT_LANGUAGE = 0; // 0 = English, 1 = Chinese
 
 // Window styles (regular vs extended styles must not be mixed)
+// NOTE: do NOT add WS_EX_TRANSPARENT to a layered window - per MSDN it makes ALL
+// mouse events pass through (ignoring WM_NCHITTEST), so buttons can never be
+// clicked. Click-through for non-interactive areas is done via WM_NCHITTEST
+// returning HTTRANSPARENT instead.
 constexpr DWORD FLOATING_WINDOW_STYLE = WS_POPUP;
-constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
+constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 
 // Message constants
 constexpr UINT FC_WM_TRAY_NOTIFY = WM_APP + 1;

@@ -30,9 +30,12 @@ public:
     void draw_rounded_rect(const D2D1_RECT_F& rect, float radius, 
                            const D2D1_COLOR_F& color, float opacity = 1.0f);
     
-    // Draw text
+    // Draw text (long text auto-scrolls as a marquee when it overflows the box)
     void draw_text(const wchar_t* text, float x, float y, float width, float height,
                    IDWriteTextFormat* format, const D2D1_COLOR_F& color);
+
+    // True if the last rendered frame contained any scrolling (marquee) text
+    bool is_marquee_active() const { return m_marquee_active; }
     
     // Draw progress bar
     void draw_progress_bar(float x, float y, float width, float height,
@@ -101,4 +104,11 @@ protected:
 
     // Round-cap stroke style (for progress ring / glass edges)
     ID2D1StrokeStyle* m_round_stroke = nullptr;
+
+    // Set when the last frame scrolled any long text; keeps the frame loop alive
+    bool m_marquee_active = false;
+
+    // Internal: horizontally scroll `text` inside the box (used by draw_text)
+    void draw_text_marquee(const wchar_t* text, float x, float y, float width, float height,
+                           IDWriteTextFormat* format, const D2D1_COLOR_F& color);
 };
