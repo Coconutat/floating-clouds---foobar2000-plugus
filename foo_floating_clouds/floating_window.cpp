@@ -476,48 +476,35 @@ void FloatingCloudsWindow::on_volume_change(float volume)
 
 CSize FloatingCloudsWindow::calculate_size()
 {
-    // Measure text with DirectWrite so the window fits its content (min 200, max 500).
-    int text_width = 200;
-    if (m_title.length() > 0) {
-        pfc::stringcvt::string_wide_from_utf8 wtitle(m_title);
-        float tw = measure_text_width(wtitle, get_title_format());
-        float aw = 0.0f;
-        if (m_artist.length() > 0) {
-            pfc::stringcvt::string_wide_from_utf8 wartist(m_artist);
-            aw = measure_text_width(wartist, get_artist_format());
-        }
-        int w = (int)(tw + (aw > 0 ? 6.0f + aw : 0.0f));
-        text_width = (std::max)(text_width, w);
-    }
-    text_width = (std::min)(text_width, 500); // Cap max width
-    
+    // Fixed sizes per style: the window never resizes with text length.
+    // Long titles scroll (marquee) inside their fixed width instead.
     switch (m_current_style) {
         case FloatingStyle::Mini:
-            return CSize(text_width + WINDOW_PADDING * 2, STYLE_MINI_HEIGHT);
+            return CSize(STYLE_MINI_WIDTH, STYLE_MINI_HEIGHT);
         
         case FloatingStyle::MiniArt:
-            return CSize(text_width + COVER_ART_SIZE + WINDOW_PADDING * 3, STYLE_MINIART_HEIGHT);
+            return CSize(STYLE_MINIART_WIDTH, STYLE_MINIART_HEIGHT);
         
         case FloatingStyle::Full:
-            return CSize((std::max)(text_width, COVER_ART_SIZE_FULL + 160) + WINDOW_PADDING * 2, STYLE_FULL_HEIGHT);
+            return CSize(STYLE_FULL_WIDTH, STYLE_FULL_HEIGHT);
         
         case FloatingStyle::MinimalLine:
-            return CSize(text_width + WINDOW_PADDING * 2, 32);
+            return CSize(STYLE_MINIMAL_LINE_WIDTH, 32);
         
         case FloatingStyle::AlbumFocus:
             return CSize(320, 400);
         
         case FloatingStyle::ProgressRing:
-            return CSize(200, 240);
+            return CSize(200, 272);
         
         case FloatingStyle::Visualizer:
-            return CSize(320, 180);
+            return CSize(320, 224);
         
         case FloatingStyle::LyricsLine:
             return CSize(400, 120);
         
         default:
-            return CSize(300, STYLE_MINI_HEIGHT);
+            return CSize(STYLE_MINI_WIDTH, STYLE_MINI_HEIGHT);
     }
 }
 
@@ -533,16 +520,16 @@ void FloatingCloudsWindow::update_layered_window()
 
 int FloatingCloudsWindow::hit_test_button(CPoint point)
 {
-    if (m_current_style != FloatingStyle::Full) return -1;
+    if (!style_has_buttons(m_current_style)) return -1;
     
-    // Button layout: [<<] [Play/Pause] [>>] [Vol]
+    // Control button row: [<<] [Play/Pause] [>>] [Vol], bottom-centered.
     const int btn_count = 4;
-    const int btn_spacing = 8;
+    const int btn_spacing = BUTTON_SPACING;
     const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
     
     CSize size = calculate_size();
-    int start_x = (size.cx - total_width) / 2;
-    int btn_y = size.cy - WINDOW_PADDING - BUTTON_SIZE;
+    int start_x = button_row_start_x(size.cx);
+    int btn_y = button_row_y(size.cy);
     
     for (int i = 0; i < btn_count; i++) {
         int btn_x = start_x + i * (BUTTON_SIZE + btn_spacing);

@@ -98,6 +98,7 @@ protected:
     // Album art bitmap
     ID2D1Bitmap* m_album_art_bitmap = nullptr;
     bool m_album_art_dirty = true;
+    int m_album_art_display_size = 0; // display size the cached bitmap was scaled to
     
     // Rounded rect geometry
     ID2D1RoundedRectangleGeometry* m_rounded_rect_geo = nullptr;

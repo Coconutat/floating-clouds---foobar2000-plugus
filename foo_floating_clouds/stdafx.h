@@ -27,3 +27,6 @@
 #include <functional>
 #include <algorithm>
 #include <cmath>
+
+// MD3 (Material 3) design tokens
+#include "md3_theme.h"

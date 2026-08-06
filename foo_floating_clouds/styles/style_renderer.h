@@ -30,6 +30,7 @@ private:
     void render_progress_ring(const CSize& size);
     void render_visualizer(const CSize& size);
     void render_lyrics_line(const CSize& size);
+    void draw_button_row(const CSize& size);
 
     FloatingCloudsWindow* m_window;
     D2DRenderer* m_renderer;

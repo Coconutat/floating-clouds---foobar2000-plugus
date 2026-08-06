@@ -80,9 +80,39 @@ constexpr int32_t WINDOW_CORNER_RADIUS = 12;
 
 // Style sizing
 constexpr int32_t STYLE_MINI_HEIGHT = 40;
-constexpr int32_t STYLE_MINIART_HEIGHT = 80;
+constexpr int32_t STYLE_MINIART_HEIGHT = 116; // taller: bottom control-button row
 constexpr int32_t STYLE_FULL_HEIGHT = 140;
+// Fixed widths per style: the window never resizes with text length.
+// Long titles scroll (marquee) inside their fixed width instead.
+constexpr int32_t STYLE_MINI_WIDTH = 300;
+constexpr int32_t STYLE_MINIART_WIDTH = 380;
+constexpr int32_t STYLE_FULL_WIDTH = 400;
+constexpr int32_t STYLE_MINIMAL_LINE_WIDTH = 360;
 constexpr int32_t COVER_ART_SIZE = 56;
 constexpr int32_t COVER_ART_SIZE_FULL = 64;
 constexpr int32_t BUTTON_SIZE = 24;
+constexpr int32_t BUTTON_SPACING = 8;
 constexpr int32_t PROGRESS_BAR_HEIGHT = 4;
+
+// --- Control-button row geometry (shared by hit-testing and style rendering) ---
+inline int32_t button_row_width()  { return 4 * BUTTON_SIZE + 3 * BUTTON_SPACING; }
+inline int32_t button_row_start_x(int32_t window_cx) { return (window_cx - button_row_width()) / 2; }
+inline int32_t button_row_y(int32_t window_cy)       { return window_cy - WINDOW_PADDING - BUTTON_SIZE; }
+// Y of a progress bar that sits just above the button row.
+inline int32_t progress_above_buttons_y(int32_t window_cy) {
+    return window_cy - WINDOW_PADDING - BUTTON_SIZE - WINDOW_PADDING - PROGRESS_BAR_HEIGHT - 4;
+}
+
+// Which styles render a control-button row (tiny / special-purpose styles omit it).
+inline bool style_has_buttons(FloatingStyle s) {
+    switch (s) {
+        case FloatingStyle::MiniArt:
+        case FloatingStyle::Full:
+        case FloatingStyle::AlbumFocus:
+        case FloatingStyle::ProgressRing:
+        case FloatingStyle::Visualizer:
+            return true;
+        default:
+            return false; // Mini, MinimalLine (single-line) and LyricsLine (lyrics overlay)
+    }
+}

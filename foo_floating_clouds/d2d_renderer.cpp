@@ -114,8 +114,8 @@ void D2DRenderer::end_draw()
 
 void D2DRenderer::clear_background(float opacity)
 {
-    // Dark semi-transparent background like game HUD
-    m_render_target->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, opacity));
+    // MD3 dark surface-container tone (replaces the old pure-black HUD fill)
+    m_render_target->Clear(D2DRenderer::hex(md3::surface_container, opacity));
 }
 
 void D2DRenderer::draw_rounded_rect(const D2D1_RECT_F& rect, float radius,
@@ -220,42 +220,51 @@ void D2DRenderer::draw_progress_bar(float x, float y, float width, float height,
 void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_ptr art)
 {
     if (art.is_empty() || !art->get_size()) return;
-    
-    // If we have a new album art, create a D2D bitmap from it
-    if (m_album_art_dirty && m_wic_factory) {
+
+    // Rebuild the D2D bitmap when a new image arrives OR when the display size
+    // changes. The source is pre-scaled to the display size with WIC Fant
+    // interpolation, so downscaling a large cover to a small tile doesn't alias
+    // into moire patterns (plain D2D DrawBitmap LINEAR sampling does).
+    if ((m_album_art_dirty || m_album_art_display_size != (int)size) && m_wic_factory) {
         if (m_album_art_bitmap) {
             m_album_art_bitmap->Release();
             m_album_art_bitmap = nullptr;
         }
-        
-        // Create a WIC stream from the album art data
+
         IWICStream* wic_stream = nullptr;
-        HRESULT hr = m_wic_factory->CreateStream(&wic_stream);
-        if (SUCCEEDED(hr)) {
-            hr = wic_stream->InitializeFromMemory(
-                const_cast<BYTE*>(static_cast<const BYTE*>(art->get_ptr())),
-                (DWORD)art->get_size());
-            
-            if (SUCCEEDED(hr)) {
+        if (SUCCEEDED(m_wic_factory->CreateStream(&wic_stream))) {
+            if (SUCCEEDED(wic_stream->InitializeFromMemory(
+                    const_cast<BYTE*>(static_cast<const BYTE*>(art->get_ptr())),
+                    (DWORD)art->get_size()))) {
+
                 IWICBitmapDecoder* decoder = nullptr;
-                hr = m_wic_factory->CreateDecoderFromStream(
-                    wic_stream, NULL, WICDecodeMetadataCacheOnLoad, &decoder);
-                
-                if (SUCCEEDED(hr)) {
+                if (SUCCEEDED(m_wic_factory->CreateDecoderFromStream(
+                        wic_stream, NULL, WICDecodeMetadataCacheOnLoad, &decoder))) {
+
                     IWICBitmapFrameDecode* frame = nullptr;
-                    hr = decoder->GetFrame(0, &frame);
-                    
-                    if (SUCCEEDED(hr)) {
+                    if (SUCCEEDED(decoder->GetFrame(0, &frame))) {
+
+                        // Pre-scale down with Fant (best downscale quality) when
+                        // the cover is larger than the display tile; otherwise
+                        // keep the native size (upscaling stays soft, no moire).
+                        IWICBitmapSource* src = frame;
+                        CComPtr<IWICBitmapScaler> scaler;
+                        UINT src_w = 0, src_h = 0;
+                        frame->GetSize(&src_w, &src_h);
+                        if (src_w > (UINT)size && src_h > (UINT)size) {
+                            if (SUCCEEDED(m_wic_factory->CreateBitmapScaler(&scaler)) &&
+                                SUCCEEDED(scaler->Initialize(frame, (UINT)size, (UINT)size,
+                                    WICBitmapInterpolationModeFant))) {
+                                src = scaler;
+                            }
+                        }
+
                         IWICFormatConverter* converter = nullptr;
-                        hr = m_wic_factory->CreateFormatConverter(&converter);
-                        
-                        if (SUCCEEDED(hr)) {
-                            hr = converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA,
-                                                       WICBitmapDitherTypeNone, NULL, 0.0, 
-                                                       WICBitmapPaletteTypeMedianCut);
-                            
-                            if (SUCCEEDED(hr)) {
-                                hr = m_render_target->CreateBitmapFromWicBitmap(converter, NULL, &m_album_art_bitmap);
+                        if (SUCCEEDED(m_wic_factory->CreateFormatConverter(&converter))) {
+                            if (SUCCEEDED(converter->Initialize(src, GUID_WICPixelFormat32bppPBGRA,
+                                    WICBitmapDitherTypeNone, NULL, 0.0,
+                                    WICBitmapPaletteTypeMedianCut))) {
+                                m_render_target->CreateBitmapFromWicBitmap(converter, NULL, &m_album_art_bitmap);
                             }
                             converter->Release();
                         }
@@ -266,16 +275,18 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
             }
             wic_stream->Release();
         }
-        
+
         m_album_art_dirty = false;
+        m_album_art_display_size = (int)size;
     }
-    
-    // Draw the bitmap
+
+    // Draw the (already correctly sized) bitmap
     if (m_album_art_bitmap) {
-        m_render_target->DrawBitmap(m_album_art_bitmap, D2D1::RectF(x, y, x + size, y + size));
+        m_render_target->DrawBitmap(m_album_art_bitmap, D2D1::RectF(x, y, x + size, y + size),
+                                    1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     } else {
         // Draw placeholder (music note icon as simple colored rect)
-        m_brush->SetColor(D2D1::ColorF(0.3f, 0.3f, 0.3f, 0.8f));
+        m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 0.9f));
         m_render_target->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(x, y, x + size, y + size), 4, 4), m_brush);
     }
@@ -284,10 +295,10 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
 void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_text,
                                bool is_active, const D2D1_COLOR_F& color)
 {
-    // Circle background
+    // Circle background (MD3 icon-button tonal fill)
     D2D1_COLOR_F bg_color = is_active ? 
-        D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.3f) : 
-        D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+        D2DRenderer::hex(md3::primary, 0.20f) : 
+        D2DRenderer::hex(md3::on_surface_variant, 0.12f);
     
     m_brush->SetColor(bg_color);
     float radius = size / 2;
