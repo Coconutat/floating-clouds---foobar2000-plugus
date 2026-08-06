@@ -1,8 +1,8 @@
 # floating clouds - foobar2000 plugus  
 **Language**: **ENGLISH** | [简体中文](README_CN.md)  
 ***
-Foobar2000 SDK Version: SDK-2025-03-07
-Windows Template Library: WTL10_01_Release  
+Foobar2000 SDK Version: SDK-2025-03-07  
+Windows Template Library: WTL10_01_Release    
 ***
 
 A foobar2000 component that displays a floating UI overlay on your desktop or over fullscreen games, showing now-playing information with album art, track title, artist, and playback controls.
@@ -25,14 +25,6 @@ A foobar2000 component that displays a floating UI overlay on your desktop or ov
 2. Copy `foo_floating_clouds.dll` to your foobar2000 `components` directory
 3. Restart foobar2000 — the floating window appears automatically
 4. Use `Scroll Lock` to toggle drag mode, `Ctrl+Alt+F` to hide/show
-
-## Documentation
-
-| Resource | Description |
-|----------|-------------|
-| [Technical Design](docs/technical-design.md) | Full architecture, interaction, visual design |
-| [Domain Glossary](CONTEXT.md) | Domain terminology and model |
-| [Architecture Decisions](docs/adr/) | Key architectural decisions (ADR) |
 
 ## Build
 

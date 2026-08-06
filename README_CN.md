@@ -1,8 +1,8 @@
 # floating clouds - foobar2000 plugus  
 **语言**: [ENGLISH](README.md) | **简体中文**
 ***
-Foobar2000 SDK Version: SDK-2025-03-07
-Windows Template Library: WTL10_01_Release  
+Foobar2000 SDK Version: SDK-2025-03-07  
+Windows Template Library: WTL10_01_Release    
 ***
 
 一个 Foobar2000 插件，在桌面或游戏时在显示器某区域显示音乐播放器的悬浮 UI 叠加层。支持专辑封面、歌曲名称、歌手显示和简易播放控制。
@@ -25,14 +25,6 @@ Windows Template Library: WTL10_01_Release
 2. 将 `foo_floating_clouds.dll` 复制到 foobar2000 的 `components` 目录
 3. 重启 foobar2000 — 悬浮窗口会自动显示
 4. 按 `Scroll Lock` 切换拖动模式，`Ctrl+Alt+F` 隐藏/显示
-
-## 文档
-
-| 资源 | 说明 |
-|------|------|
-| [技术设计文档](docs/technical-design.md) | 完整架构、交互、视觉设计 |
-| [领域术语表](CONTEXT.md) | 领域模型与术语 |
-| [架构决策记录](docs/adr/) | 关键架构决策 (ADR) |
 
 ## 构建
 
