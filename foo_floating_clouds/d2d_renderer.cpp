@@ -52,6 +52,7 @@ void D2DRenderer::release_resources()
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
     if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
     if (m_rounded_rect_geo) { m_rounded_rect_geo->Release(); m_rounded_rect_geo = nullptr; }
+    if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
 }
 
@@ -75,7 +76,16 @@ bool D2DRenderer::create_resources()
     
     hr = m_render_target->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &m_brush);
     if (FAILED(hr)) return false;
-    
+
+    D2D1_STROKE_STYLE_PROPERTIES stroke_props = {};
+    stroke_props.startCap = D2D1_CAP_STYLE_ROUND;
+    stroke_props.endCap = D2D1_CAP_STYLE_ROUND;
+    stroke_props.dashCap = D2D1_CAP_STYLE_ROUND;
+    stroke_props.lineJoin = D2D1_LINE_JOIN_ROUND;
+    stroke_props.dashStyle = D2D1_DASH_STYLE_SOLID;
+    hr = m_d2d_factory->CreateStrokeStyle(stroke_props, NULL, 0, &m_round_stroke);
+    if (FAILED(hr)) return false;
+
     return true;
 }
 
@@ -126,7 +136,24 @@ void D2DRenderer::draw_text(const wchar_t* text, float x, float y, float width, 
     m_brush->SetColor(color);
     
     D2D1_RECT_F rect = D2D1::RectF(x, y, x + width, y + height);
-    m_render_target->DrawText(text, (UINT32)wcslen(text), format, rect, m_brush);
+    // CLIP keeps overflowing single-line text from drawing outside its box.
+    m_render_target->DrawText(text, (UINT32)wcslen(text), format, rect, m_brush,
+                              D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+float D2DRenderer::measure_text_width(const wchar_t* text, IDWriteTextFormat* format)
+{
+    if (!text || !format || !m_dwrite_factory) return 0.0f;
+
+    CComPtr<IDWriteTextLayout> layout;
+    // With NO_WRAP the layout reports the text's natural single-line width.
+    HRESULT hr = m_dwrite_factory->CreateTextLayout(
+        text, (UINT32)wcslen(text), format, 10000.0f, 1000.0f, &layout);
+    if (FAILED(hr)) return 0.0f;
+
+    DWRITE_TEXT_METRICS metrics = {};
+    if (FAILED(layout->GetMetrics(&metrics))) return 0.0f;
+    return metrics.widthIncludingTrailingWhitespace;
 }
 
 void D2DRenderer::draw_progress_bar(float x, float y, float width, float height,
@@ -243,44 +270,43 @@ void D2DRenderer::draw_progress_ring(float cx, float cy, float radius, float thi
                                       float progress, const D2D1_COLOR_F& fg_color,
                                       const D2D1_COLOR_F& bg_color)
 {
-    // Background circle
+    // Background track (full circle)
     m_brush->SetColor(bg_color);
     m_render_target->DrawEllipse(
-        D2D1::Ellipse(D2D1::Point2F(cx, cy), radius, radius), m_brush, thickness);
-    
-    // Progress arc (using simplified approach - arc segments)
-    if (progress > 0.0f) {
+        D2D1::Ellipse(D2D1::Point2F(cx, cy), radius, radius), m_brush, thickness, m_round_stroke);
+
+    progress = std::clamp(progress, 0.0f, 1.0f);
+    if (progress <= 0.0f) return;      // nothing filled yet
+    if (progress >= 1.0f) {            // complete -> full ring
         m_brush->SetColor(fg_color);
-        
-        float angle = progress * 2.0f * 3.14159265f;
-        float start_x = cx + radius * sinf(0);
-        float start_y = cy - radius * cosf(0);
-        float end_x = cx + radius * sinf(angle);
-        float end_y = cy - radius * cosf(angle);
-        
-        bool large_arc = progress > 0.5f;
-        
-        D2D1_POINT_2F points[] = {
-            D2D1::Point2F(start_x, start_y),
-            D2D1::Point2F(end_x, end_y)
-        };
-        
-        // Use a geometry for the arc
-        CComPtr<ID2D1PathGeometry> path_geo;
-        CComPtr<ID2D1GeometrySink> sink;
-        
-        if (SUCCEEDED(m_d2d_factory->CreatePathGeometry(&path_geo)) &&
-            SUCCEEDED(path_geo->Open(&sink))) {
-            sink->SetFillMode(D2D1_FILL_MODE_WINDING);
-            sink->BeginFigure(points[0], D2D1_FIGURE_BEGIN_HOLLOW);
-            sink->AddArc(D2D1::ArcSegment(points[1], D2D1::SizeF(radius, radius), 0.0f,
-                                           large_arc ? D2D1_SWEEP_DIRECTION_CLOCKWISE : D2D1_SWEEP_DIRECTION_CLOCKWISE,
-                                           D2D1_ARC_SIZE_LARGE));
-            sink->EndFigure(D2D1_FIGURE_END_OPEN);
-            sink->Close();
-            
-            m_render_target->DrawGeometry(path_geo, m_brush, thickness);
-        }
+        m_render_target->DrawEllipse(
+            D2D1::Ellipse(D2D1::Point2F(cx, cy), radius, radius), m_brush, thickness, m_round_stroke);
+        return;
+    }
+
+    // Progress arc from 12 o'clock, clockwise. Arc size must follow progress:
+    // SMALL for <50%, LARGE for >=50% (a fixed LARGE previously showed ~90% at 10%).
+    const float angle = progress * 2.0f * 3.14159265f;
+    const D2D1_POINT_2F start_pt = D2D1::Point2F(cx + radius * sinf(0.0f), cy - radius * cosf(0.0f));
+    const D2D1_POINT_2F end_pt = D2D1::Point2F(cx + radius * sinf(angle), cy - radius * cosf(angle));
+
+    CComPtr<ID2D1PathGeometry> path_geo;
+    CComPtr<ID2D1GeometrySink> sink;
+    if (SUCCEEDED(m_d2d_factory->CreatePathGeometry(&path_geo)) &&
+        SUCCEEDED(path_geo->Open(&sink))) {
+        sink->SetFillMode(D2D1_FILL_MODE_WINDING);
+        sink->BeginFigure(start_pt, D2D1_FIGURE_BEGIN_HOLLOW);
+        sink->AddArc(D2D1::ArcSegment(
+            end_pt,
+            D2D1::SizeF(radius, radius),
+            0.0f,
+            D2D1_SWEEP_DIRECTION_CLOCKWISE,
+            progress < 0.5f ? D2D1_ARC_SIZE_SMALL : D2D1_ARC_SIZE_LARGE));
+        sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        sink->Close();
+
+        m_brush->SetColor(fg_color);
+        m_render_target->DrawGeometry(path_geo, m_brush, thickness, m_round_stroke);
     }
 }
 
@@ -295,6 +321,10 @@ IDWriteTextFormat* D2DRenderer::get_text_format(float size, DWRITE_FONT_WEIGHT w
     if (format) {
         format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        // Single line: never wrap (long text would overlap the next row).
+        // Overflow is clipped in draw_text (DWRITE_TRIMMING_SIGN not available
+        // under the current _WIN32_WINNT, so ellipsis trimming is omitted).
+        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     }
     
     return format;

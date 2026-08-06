@@ -12,7 +12,7 @@ Windows Template Library: WTL10_01_Release
 - **悬浮叠加** — 独立窗口，始终保持在桌面或全屏游戏之上
 - **3 种核心风格** — Mini、小方块 Mini、小方块（含播放控制按钮）
 - **5 种扩展风格** — 极简线、专辑焦点、进度环、可视化、歌词行
-- **全局热键** — 切换拖动模式、显示/隐藏、循环切换风格（全屏游戏可用）
+- **全局热键（可自定义）** — 切换拖动模式、显示/隐藏、循环切换风格（全屏游戏可用）
 - **点击穿透** — 按钮可点击，其余区域穿透
 - **HUD 视觉风格** — 半透明暗色面板，大圆角
 - **Direct2D 渲染** — 硬件加速，流畅动画
@@ -24,7 +24,10 @@ Windows Template Library: WTL10_01_Release
 1. 从 [Releases](https://github.com/Coconutat/floating-clouds---foobar2000-plugus/releases) 下载最新版本
 2. 将 `foo_floating_clouds.dll` 复制到 foobar2000 的 `components` 目录
 3. 重启 foobar2000 — 悬浮窗口会自动显示
-4. 按 `Scroll Lock` 切换拖动模式，`Ctrl+Alt+F` 隐藏/显示
+4. 默认热键：`Ctrl+Alt+D` 切换拖动模式、`Ctrl+Alt+F` 隐藏/显示、`Ctrl+Alt+S` 切换样式
+
+> 所有热键都可在 `文件 > 偏好设置 > 组件 > Floating Clouds` 中自定义：点击热键输入框，
+> 再按下新的组合键即可（组合键需包含 Ctrl/Alt/Shift/Win）。
 
 ## 构建
 

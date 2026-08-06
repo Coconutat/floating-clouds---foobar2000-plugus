@@ -26,6 +26,9 @@ namespace cfg_guids {
     static const GUID hk_vis_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x13 } };
     static const GUID hk_style_mod = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x14 } };
     static const GUID hk_style_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x15 } };
+
+    // Localization
+    static const GUID language = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x16 } };
 }
 
 // Style enum
@@ -42,9 +45,10 @@ enum class FloatingStyle : int32_t {
     Count = 8
 };
 
-// Hotkey defaults
-constexpr uint32_t DEFAULT_HK_DRAG_MOD = 0;           // No modifier for Scroll Lock
-constexpr uint32_t DEFAULT_HK_DRAG_VK = VK_SCROLL;
+// Hotkey defaults (all customizable in Preferences > Components > Floating Clouds)
+// Note: RegisterHotKey requires at least one modifier.
+constexpr uint32_t DEFAULT_HK_DRAG_MOD = MOD_CONTROL | MOD_ALT;
+constexpr uint32_t DEFAULT_HK_DRAG_VK = 'D';
 constexpr uint32_t DEFAULT_HK_VIS_MOD = MOD_CONTROL | MOD_ALT;
 constexpr uint32_t DEFAULT_HK_VIS_VK = 'F';
 constexpr uint32_t DEFAULT_HK_STYLE_MOD = MOD_CONTROL | MOD_ALT;
@@ -54,6 +58,7 @@ constexpr uint32_t DEFAULT_HK_STYLE_VK = 'S';
 constexpr int32_t DEFAULT_OPACITY = 220;
 constexpr bool DEFAULT_AUTO_HIDE = true;
 constexpr int32_t DEFAULT_STYLE = static_cast<int32_t>(FloatingStyle::Full);
+constexpr int32_t DEFAULT_LANGUAGE = 0; // 0 = English, 1 = Chinese
 
 // Window styles (regular vs extended styles must not be mixed)
 constexpr DWORD FLOATING_WINDOW_STYLE = WS_POPUP;

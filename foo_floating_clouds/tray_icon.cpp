@@ -3,6 +3,7 @@
 #include "tray_icon.h"
 #include "floating_window.h"
 #include "config.h"
+#include "localization.h"
 
 // ============================================================================
 // TrayIcon implementation
@@ -82,22 +83,17 @@ void TrayIcon::show_context_menu()
 {
     HMENU menu = CreatePopupMenu();
     
-    // Style submenu
+    // Style submenu (localized)
     HMENU style_menu = CreatePopupMenu();
-    AppendMenu(style_menu, MF_STRING, 1001, L"Mini");
-    AppendMenu(style_menu, MF_STRING, 1002, L"Mini Art");
-    AppendMenu(style_menu, MF_STRING, 1003, L"Full");
-    AppendMenu(style_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(style_menu, MF_STRING, 1004, L"Minimal Line");
-    AppendMenu(style_menu, MF_STRING, 1005, L"Album Focus");
-    AppendMenu(style_menu, MF_STRING, 1006, L"Progress Ring");
-    AppendMenu(style_menu, MF_STRING, 1007, L"Visualizer");
-    AppendMenu(style_menu, MF_STRING, 1008, L"Lyrics Line");
+    for (int i = 0; i < (int)FloatingStyle::Count; i++) {
+        AppendMenu(style_menu, MF_STRING, 1001 + i, tr_style(static_cast<FloatingStyle>(i)));
+        if (i == 2) AppendMenu(style_menu, MF_SEPARATOR, 0, NULL); // group core vs extended styles
+    }
     
-    AppendMenu(menu, MF_POPUP, (UINT_PTR)style_menu, L"Style");
+    AppendMenu(menu, MF_POPUP, (UINT_PTR)style_menu, tr(L"Style", L"样式"));
     AppendMenu(menu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(menu, MF_STRING, 2001, m_window->is_visible() ? L"Hide" : L"Show");
-    AppendMenu(menu, MF_STRING, 2002, L"Exit");
+    AppendMenu(menu, MF_STRING, 2001, m_window->is_visible() ? tr(L"Hide", L"隐藏") : tr(L"Show", L"显示"));
+    AppendMenu(menu, MF_STRING, 2002, tr(L"Exit", L"退出"));
     
     // Get cursor position for the menu
     POINT pt;

@@ -39,10 +39,20 @@ public:
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(WM_DISPLAYCHANGE, OnDisplayChange)
         MESSAGE_HANDLER(FC_WM_TRAY_NOTIFY, OnTrayNotify)
+        MESSAGE_HANDLER(WM_TIMER, OnTimer)
     END_MSG_MAP()
 
     // Initialize the window
     void initialize_window(HWND parent);
+
+    // Re-register hotkeys from config (called when hotkeys change in Preferences)
+    static void reload_hotkeys();
+
+    // Apply opacity/style preferences to the live window immediately (hot reload)
+    static void apply_preferences();
+
+    // True if the given pointer is still the live window instance (safe after destruction)
+    static bool is_current(FloatingCloudsWindow* w) { return s_instance == w; }
     
     // Show/hide with animation
     void show_with_animation();
@@ -82,6 +92,8 @@ public:
     double get_playback_time() const { return m_playback_time; }
     double get_track_length() const { return m_track_length; }
     float get_volume() const { return m_volume; }
+    // Eased progress value shown to the user (0..1), animated by the frame loop
+    float get_display_progress() const { return m_display_progress; }
 
 private:
     // Window event handlers
@@ -98,6 +110,12 @@ private:
     LRESULT OnHotKey(UINT msg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnDisplayChange(UINT msg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnTrayNotify(UINT msg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+
+    // Animation frame loop
+    LRESULT OnTimer(UINT, WPARAM, LPARAM, BOOL&);
+    void start_anim_timer();
+    void stop_anim_timer();
+    void on_anim_tick();
 
     // Calculate window size based on current style
     CSize calculate_size();
@@ -140,4 +158,11 @@ private:
     // Animation
     float m_anim_opacity = 1.0f;
     bool m_animating = false;
+    float m_display_progress = 0.0f;   // eased value shown to the user
+    float m_target_progress = 0.0f;    // real playback progress target
+    UINT_PTR m_anim_timer = 0;
+    double m_last_anim_tick = 0.0;
+
+    // Process-wide pointer to the active window (so Preferences can reload hotkeys)
+    static FloatingCloudsWindow* s_instance;
 };

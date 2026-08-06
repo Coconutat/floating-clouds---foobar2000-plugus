@@ -7,6 +7,8 @@
 // FloatingCloudsWindow implementation
 // ============================================================================
 
+FloatingCloudsWindow* FloatingCloudsWindow::s_instance = nullptr;
+
 FloatingCloudsWindow::FloatingCloudsWindow()
     : m_hotkeys(std::make_unique<HotkeyManager>())
     , m_playback_listener(std::make_unique<PlaybackListener>(this))
@@ -23,6 +25,7 @@ FloatingCloudsWindow::~FloatingCloudsWindow()
 void FloatingCloudsWindow::initialize_window(HWND parent)
 {
     Create(parent);
+    s_instance = this;
     FB2K_console_formatter() << "Floating Clouds: Create -> hwnd=" << (t_size)(size_t)m_hWnd
         << " style=0x" << GetWindowLong(GWL_STYLE)
         << " exstyle=0x" << GetWindowLong(GWL_EXSTYLE)
@@ -80,10 +83,37 @@ LRESULT FloatingCloudsWindow::OnCreate(LPCREATESTRUCT cs)
 
 void FloatingCloudsWindow::OnDestroy()
 {
+    if (s_instance == this) s_instance = nullptr;
+    stop_anim_timer();
     m_tray_icon->destroy();
     m_hotkeys->unregister_all();
     release_resources();
     SetMsgHandled(FALSE);
+}
+
+void FloatingCloudsWindow::reload_hotkeys()
+{
+    if (!s_instance || !s_instance->IsWindow()) return;
+    s_instance->m_hotkeys->unregister_all();
+    bool ok = s_instance->m_hotkeys->register_all(s_instance->m_hWnd);
+    FB2K_console_formatter() << "Floating Clouds: hotkeys re-registered ok=" << (ok ? 1 : 0);
+}
+
+void FloatingCloudsWindow::apply_preferences()
+{
+    if (!s_instance || !s_instance->IsWindow()) return;
+
+    // Opacity
+    s_instance->update_layered_window();
+
+    // Style: switch if changed, otherwise just repaint
+    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
+    FloatingStyle st = static_cast<FloatingStyle>((int32_t)cfg_style.get_value());
+    if (st != s_instance->m_current_style) {
+        s_instance->set_style(st);
+    } else {
+        s_instance->Invalidate();
+    }
 }
 
 void FloatingCloudsWindow::OnPaint(CDCHandle dc)
@@ -267,19 +297,86 @@ void FloatingCloudsWindow::toggle_visibility()
 
 void FloatingCloudsWindow::show_with_animation()
 {
+    const bool was_hidden = !m_visible;
     m_visible = true;
-    m_anim_opacity = 1.0f;
+    if (was_hidden) m_anim_opacity = 0.0f; // fade in from transparent
     ShowWindow(SW_SHOW);
     SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
     update_layered_window();
+    start_anim_timer();
     Invalidate();
 }
 
 void FloatingCloudsWindow::hide_with_animation()
 {
     m_visible = false;
-    m_anim_opacity = 0.0f;
-    ShowWindow(SW_HIDE);
+    if (m_anim_opacity <= 0.001f) {
+        ShowWindow(SW_HIDE);
+        return;
+    }
+    start_anim_timer(); // fade out, then SW_HIDE when settled
+}
+
+void FloatingCloudsWindow::start_anim_timer()
+{
+    if (m_anim_timer == 0) {
+        m_anim_timer = SetTimer(1, 16, NULL);
+        m_last_anim_tick = (double)GetTickCount64();
+    }
+}
+
+void FloatingCloudsWindow::stop_anim_timer()
+{
+    if (m_anim_timer != 0) {
+        KillTimer(1);
+        m_anim_timer = 0;
+    }
+}
+
+LRESULT FloatingCloudsWindow::OnTimer(UINT, WPARAM, LPARAM, BOOL& bHandled)
+{
+    on_anim_tick();
+    bHandled = TRUE;
+    return 0;
+}
+
+void FloatingCloudsWindow::on_anim_tick()
+{
+    if (!IsWindow()) { stop_anim_timer(); return; }
+
+    m_last_anim_tick = (double)GetTickCount64();
+    bool changed = false;
+
+    // Progress: exponential smoothing toward the target -> gradual fill.
+    const float k = 0.15f;
+    float d = m_target_progress - m_display_progress;
+    if (fabsf(d) > 0.0005f) {
+        m_display_progress += d * k;
+        if (fabsf(m_target_progress - m_display_progress) < 0.0005f)
+            m_display_progress = m_target_progress;
+        changed = true;
+    } else {
+        m_display_progress = m_target_progress;
+    }
+
+    // Opacity: ease toward 1 (visible) or 0 (hiding).
+    const float target_op = m_visible ? 1.0f : 0.0f;
+    float od = target_op - m_anim_opacity;
+    if (fabsf(od) > 0.001f) {
+        m_anim_opacity += od * 0.18f;
+        if (fabsf(target_op - m_anim_opacity) < 0.001f) m_anim_opacity = target_op;
+        changed = true;
+    } else {
+        m_anim_opacity = target_op;
+    }
+
+    if (changed) {
+        update_layered_window();
+        Invalidate();
+    } else {
+        if (!m_visible) ShowWindow(SW_HIDE); // fade-out finished
+        stop_anim_timer();
+    }
 }
 
 void FloatingCloudsWindow::cycle_style()
@@ -340,6 +437,8 @@ void FloatingCloudsWindow::on_playback_stop()
     m_album_art_bitmap = nullptr;
     m_playback_time = 0.0;
     m_track_length = 0.0;
+    m_target_progress = 0.0f;
+    start_anim_timer();
     
     // Auto-hide if configured
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
@@ -353,7 +452,9 @@ void FloatingCloudsWindow::on_playback_stop()
 void FloatingCloudsWindow::on_playback_time(double time)
 {
     m_playback_time = time;
-    Invalidate();
+    m_target_progress = m_track_length > 0 ? (float)(time / m_track_length) : 0.0f;
+    m_target_progress = std::clamp(m_target_progress, 0.0f, 1.0f);
+    start_anim_timer(); // ease the displayed progress toward this target
 }
 
 void FloatingCloudsWindow::on_playback_pause(bool paused)
@@ -370,11 +471,18 @@ void FloatingCloudsWindow::on_volume_change(float volume)
 
 CSize FloatingCloudsWindow::calculate_size()
 {
-    // Calculate text dimensions
+    // Measure text with DirectWrite so the window fits its content (min 200, max 500).
     int text_width = 200;
     if (m_title.length() > 0) {
-        // Rough estimate based on character count
-        text_width = (std::max)(text_width, (int)m_title.length() * 7 + (int)m_artist.length() * 6);
+        pfc::stringcvt::string_wide_from_utf8 wtitle(m_title);
+        float tw = measure_text_width(wtitle, get_title_format());
+        float aw = 0.0f;
+        if (m_artist.length() > 0) {
+            pfc::stringcvt::string_wide_from_utf8 wartist(m_artist);
+            aw = measure_text_width(wartist, get_artist_format());
+        }
+        int w = (int)(tw + (aw > 0 ? 6.0f + aw : 0.0f));
+        text_width = (std::max)(text_width, w);
     }
     text_width = (std::min)(text_width, 500); // Cap max width
     
@@ -410,12 +518,12 @@ CSize FloatingCloudsWindow::calculate_size()
 
 void FloatingCloudsWindow::update_layered_window()
 {
-    BLENDFUNCTION blend = {};
-    blend.BlendOp = AC_SRC_OVER;
-    blend.SourceConstantAlpha = (BYTE)(DEFAULT_OPACITY * m_anim_opacity);
-    blend.AlphaFormat = AC_SRC_ALPHA;
-    
-    ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)(DEFAULT_OPACITY * m_anim_opacity), LWA_ALPHA);
+    if (!m_hWnd) return;
+    // Read opacity from config so preferences changes hot-reload.
+    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
+    int op = (int)cfg_opacity.get_value();
+    if (op < 0 || op > 255) op = DEFAULT_OPACITY;
+    ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)(op * m_anim_opacity), LWA_ALPHA);
 }
 
 int FloatingCloudsWindow::hit_test_button(CPoint point)

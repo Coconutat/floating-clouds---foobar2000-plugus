@@ -50,6 +50,9 @@ public:
     void draw_progress_ring(float cx, float cy, float radius, float thickness,
                             float progress, const D2D1_COLOR_F& fg_color,
                             const D2D1_COLOR_F& bg_color);
+
+    // Measure the natural single-line width of text in the given format
+    float measure_text_width(const wchar_t* text, IDWriteTextFormat* format);
     
     // Getters
     ID2D1HwndRenderTarget* get_render_target() const { return m_render_target; }
@@ -95,4 +98,7 @@ protected:
     
     // Rounded rect geometry
     ID2D1RoundedRectangleGeometry* m_rounded_rect_geo = nullptr;
+
+    // Round-cap stroke style (for progress ring / glass edges)
+    ID2D1StrokeStyle* m_round_stroke = nullptr;
 };

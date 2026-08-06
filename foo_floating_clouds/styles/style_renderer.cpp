@@ -84,8 +84,7 @@ void StyleRenderer::render_mini(const CSize& size)
         y += 16;
     }
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
                                    avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
                                    D2DRenderer::rgba(1, 1, 1, 0.8f),
@@ -114,8 +113,7 @@ void StyleRenderer::render_mini_art(const CSize& size)
                           m_renderer->get_artist_format(),
                           D2DRenderer::rgba(1, 1, 1, 0.6f));
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(text_x, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
                                    avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
                                    D2DRenderer::rgba(1, 1, 1, 0.8f),
@@ -145,8 +143,7 @@ void StyleRenderer::render_full(const CSize& size)
                           D2DRenderer::rgba(1, 1, 1, 0.6f));
     y += 20;
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     float pb_y = (float)size.cy - pad - BUTTON_SIZE - pad - PROGRESS_BAR_HEIGHT - 4;
     m_renderer->draw_progress_bar(text_x, pb_y, avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
                                   D2DRenderer::rgba(1, 1, 1, 0.8f),
@@ -185,8 +182,7 @@ void StyleRenderer::render_minimal_line(const CSize& size)
                           m_renderer->get_title_format(),
                           D2DRenderer::rgba(1, 1, 1, 0.9f));
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad, (float)size.cy - 2, avail_w, 2, progress,
                                   D2DRenderer::rgba(1, 1, 1, 0.7f),
                                   D2DRenderer::rgba(1, 1, 1, 0.1f));
@@ -216,8 +212,7 @@ void StyleRenderer::render_album_focus(const CSize& size)
                           m_renderer->get_artist_format(),
                           D2DRenderer::rgba(1, 1, 1, 0.6f));
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     float pb_y = (float)size.cy - pad - PROGRESS_BAR_HEIGHT;
     m_renderer->draw_progress_bar(art_x, pb_y, art_size, (float)PROGRESS_BAR_HEIGHT, progress,
                                   D2DRenderer::rgba(1, 1, 1, 0.8f),
@@ -232,8 +227,7 @@ void StyleRenderer::render_progress_ring(const CSize& size)
     float ring_thickness = 6.0f;
     float art_size = 80.0f;
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     
     m_renderer->draw_progress_ring(cx, cy, ring_radius, ring_thickness, progress,
                                    D2DRenderer::rgba(1, 1, 1, 0.8f),
@@ -304,8 +298,7 @@ void StyleRenderer::render_lyrics_line(const CSize& size)
                           m_renderer->get_title_format(),
                           D2DRenderer::rgba(1, 1, 1, 0.8f));
     
-    float progress = m_window->get_track_length() > 0 ?
-        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
                                    avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
                                    D2DRenderer::rgba(1, 1, 1, 0.7f),

@@ -15,6 +15,20 @@
 #define IDC_HOTKEY_STYLE                1007
 #define IDC_HOTKEY_RECORD               1008
 
+// Localization
+#define IDC_LANGUAGE                    1100
+#define IDC_LBL_DRAG                    1101
+#define IDC_LBL_SHOWHIDE                1102
+#define IDC_LBL_CYCLE                   1103
+#define IDC_LBL_HOTKEY_HINT             1104
+#define IDC_GRP_HOTKEYS                 1105
+#define IDC_GRP_APPEARANCE              1106
+#define IDC_LBL_OPACITY                 1107
+#define IDC_LBL_DEFAULT_STYLE           1108
+#define IDC_GRP_STYLE                   1109
+#define IDC_GRP_LANGUAGE                1110
+#define IDC_LBL_LANGUAGE                1111
+
 // Next default values for new objects
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS

@@ -21,7 +21,9 @@ namespace {
         void on_quit() {
             console::print("Floating Clouds: shutting down...");
             
-            // Save window position
+            // Save window position, then actually destroy the window so
+            // WM_DESTROY -> OnDestroy runs and clears s_instance (avoids a
+            // dangling static pointer / crash during shutdown).
             if (m_window && m_window->IsWindow()) {
                 CRect rect;
                 m_window->GetWindowRect(&rect);
@@ -29,6 +31,7 @@ namespace {
                 cfg_var_modern::cfg_int cfg_y(cfg_guids::window_y, 0);
                 cfg_x = rect.left;
                 cfg_y = rect.top;
+                m_window->DestroyWindow();
             }
             
             m_window.reset();

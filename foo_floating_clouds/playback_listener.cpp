@@ -108,8 +108,11 @@ void PlaybackListener::update_track_info(metadb_handle_ptr p_track)
         p_track->format_title(NULL, album, m_script_album, NULL);
     }
     
-    // Notify window on main thread
-    fb2k::inMainThread([this, title = pfc::string8(title), artist = pfc::string8(artist), album = pfc::string8(album), track = p_track]() {
+    // Notify window on main thread. Capture the window pointer by value (NOT
+    // `this`) and verify it is still the live instance, so a queued callback
+    // that runs after the window was destroyed cannot crash during shutdown.
+    fb2k::inMainThread([window = m_window, title = pfc::string8(title), artist = pfc::string8(artist), album = pfc::string8(album), track = p_track]() {
+        if (!FloatingCloudsWindow::is_current(window)) return;
         // Need to load album art on main thread
         album_art_data_ptr art;
         try {
@@ -129,7 +132,7 @@ void PlaybackListener::update_track_info(metadb_handle_ptr p_track)
             // Album art not found, that's fine
         }
         
-        m_window->on_playback_new_track(title, artist, album, art);
+        window->on_playback_new_track(title, artist, album, art);
     });
 }
 
