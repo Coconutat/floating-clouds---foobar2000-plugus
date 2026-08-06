@@ -1,6 +1,25 @@
 # Foobar 2000 SDK
 /SDK
 
-# AI
-/docs
+# AI generated context (not project docs)
 CONTEXT.md
+/docs
+
+# VS Code
+.vscode/
+
+# Build output
+build_*.txt
+dist/
+Debug/
+Release/
+x64/
+Win32/
+*.user
+*.sdf
+*.opendb
+*.obj
+*.log
+*.tlog
+ipch/
+.vs

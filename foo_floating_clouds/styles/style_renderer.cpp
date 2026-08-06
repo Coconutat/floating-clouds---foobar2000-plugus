@@ -1,0 +1,313 @@
+#include "stdafx.h"
+#include "style_renderer.h"
+#include "../config.h"
+
+// ============================================================================
+// StyleRenderer implementation
+// ============================================================================
+
+StyleRenderer::StyleRenderer(FloatingCloudsWindow* window, D2DRenderer* renderer)
+    : m_window(window), m_renderer(renderer)
+{
+}
+
+StyleRenderer::~StyleRenderer()
+{
+}
+
+void StyleRenderer::render(FloatingStyle style, const CSize& window_size)
+{
+    switch (style) {
+        case FloatingStyle::Mini:           render_mini(window_size); break;
+        case FloatingStyle::MiniArt:        render_mini_art(window_size); break;
+        case FloatingStyle::Full:           render_full(window_size); break;
+        case FloatingStyle::MinimalLine:    render_minimal_line(window_size); break;
+        case FloatingStyle::AlbumFocus:     render_album_focus(window_size); break;
+        case FloatingStyle::ProgressRing:   render_progress_ring(window_size); break;
+        case FloatingStyle::Visualizer:     render_visualizer(window_size); break;
+        case FloatingStyle::LyricsLine:     render_lyrics_line(window_size); break;
+        default:                            render_mini(window_size); break;
+    }
+}
+
+CSize StyleRenderer::calculate_size(FloatingStyle style, const pfc::string8& title, const pfc::string8& artist)
+{
+    int text_width = 200;
+    if (title.length() > 0) {
+        text_width = (std::max)(text_width, (int)title.length() * 7 + (int)artist.length() * 6);
+    }
+    text_width = (std::min)(text_width, 500);
+
+    switch (style) {
+        case FloatingStyle::Mini:
+            return CSize(text_width + WINDOW_PADDING * 2, STYLE_MINI_HEIGHT);
+        case FloatingStyle::MiniArt:
+            return CSize(text_width + COVER_ART_SIZE + WINDOW_PADDING * 3, STYLE_MINIART_HEIGHT);
+        case FloatingStyle::Full:
+            return CSize((std::max)(text_width, COVER_ART_SIZE_FULL + 160) + WINDOW_PADDING * 2, STYLE_FULL_HEIGHT);
+        case FloatingStyle::MinimalLine:
+            return CSize(text_width + WINDOW_PADDING * 2, 32);
+        case FloatingStyle::AlbumFocus:
+            return CSize(320, 400);
+        case FloatingStyle::ProgressRing:
+            return CSize(200, 240);
+        case FloatingStyle::Visualizer:
+            return CSize(320, 200);
+        case FloatingStyle::LyricsLine:
+            return CSize(400, 120);
+        default:
+            return CSize(300, STYLE_MINI_HEIGHT);
+    }
+}
+
+void StyleRenderer::render_mini(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float avail_w = (float)size.cx - pad * 2;
+    float y = pad;
+    
+    const char* ctitle = m_window->get_title();
+    pfc::stringcvt::string_wide_from_utf8 wtitle(ctitle);
+    if (strlen(ctitle) > 0) {
+        m_renderer->draw_text(wtitle, pad, y, avail_w, 18,
+                              m_renderer->get_title_format(),
+                              D2DRenderer::rgba(1, 1, 1, 0.95f));
+        y += 18;
+    }
+    
+    const char* cartist = m_window->get_artist();
+    pfc::stringcvt::string_wide_from_utf8 wartist(cartist);
+    if (strlen(cartist) > 0) {
+        m_renderer->draw_text(wartist, pad, y, avail_w, 16,
+                              m_renderer->get_artist_format(),
+                              D2DRenderer::rgba(1, 1, 1, 0.6f));
+        y += 16;
+    }
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
+                                   avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
+                                   D2DRenderer::rgba(1, 1, 1, 0.8f),
+                                   D2DRenderer::rgba(1, 1, 1, 0.15f));
+}
+
+void StyleRenderer::render_mini_art(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float art_size = (float)COVER_ART_SIZE;
+    float avail_w = (float)size.cx - pad * 3 - art_size;
+    float y = pad;
+    
+    m_renderer->draw_album_art(pad, pad, art_size, m_window->get_album_art());
+    
+    float text_x = pad + art_size + pad;
+    
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, text_x, y, avail_w, 18,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.95f));
+    y += 20;
+    
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, text_x, y, avail_w, 16,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.6f));
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    m_renderer->draw_progress_bar(text_x, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
+                                   avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
+                                   D2DRenderer::rgba(1, 1, 1, 0.8f),
+                                   D2DRenderer::rgba(1, 1, 1, 0.15f));
+}
+
+void StyleRenderer::render_full(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float art_size = (float)COVER_ART_SIZE_FULL;
+    float avail_w = (float)size.cx - pad * 3 - art_size;
+    float y = pad;
+    
+    m_renderer->draw_album_art(pad, pad, art_size, m_window->get_album_art());
+    
+    float text_x = pad + art_size + pad;
+    
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, text_x, y, avail_w, 20,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.95f));
+    y += 22;
+    
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, text_x, y, avail_w, 16,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.6f));
+    y += 20;
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float pb_y = (float)size.cy - pad - BUTTON_SIZE - pad - PROGRESS_BAR_HEIGHT - 4;
+    m_renderer->draw_progress_bar(text_x, pb_y, avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
+                                  D2DRenderer::rgba(1, 1, 1, 0.8f),
+                                  D2DRenderer::rgba(1, 1, 1, 0.15f));
+    
+    // Control buttons: prev, play/pause, next, mute
+    const int btn_count = 4;
+    const int btn_spacing = 8;
+    const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
+    float btn_start_x = ((float)size.cx - total_width) / 2;
+    float btn_y = (float)size.cy - pad - BUTTON_SIZE;
+    
+    const wchar_t* icons[btn_count] = { L"\u23EE", L"\u23EF", L"\u23ED", L"\U0001F507" };
+    bool active[btn_count] = { false, m_window->is_paused(), false, m_window->is_volume_muted() };
+    
+    for (int i = 0; i < btn_count; i++) {
+        float btn_x = btn_start_x + i * (BUTTON_SIZE + btn_spacing);
+        m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, icons[i], active[i],
+                                D2DRenderer::rgba(1, 1, 1, 0.85f));
+    }
+}
+
+void StyleRenderer::render_minimal_line(const CSize& size)
+{
+    float pad = 8;
+    float avail_w = (float)size.cx - pad * 2;
+    
+    pfc::string8 display;
+    if (m_window->is_playing()) {
+        display << (m_window->is_paused() ? "\xE2\x9A\x90 " : "\xE2\x96\xB6 ");
+    }
+    display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
+    
+    pfc::stringcvt::string_wide_from_utf8 wdisplay(display);
+    m_renderer->draw_text(wdisplay, pad, 0, avail_w, (float)size.cy,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.9f));
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    m_renderer->draw_progress_bar(pad, (float)size.cy - 2, avail_w, 2, progress,
+                                  D2DRenderer::rgba(1, 1, 1, 0.7f),
+                                  D2DRenderer::rgba(1, 1, 1, 0.1f));
+}
+
+void StyleRenderer::render_album_focus(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float avail_w = (float)size.cx - pad * 2;
+    
+    float art_size = (std::min)(avail_w - pad * 2, (float)size.cy - 120);
+    float art_x = ((float)size.cx - art_size) / 2;
+    float art_y = pad;
+    
+    m_renderer->draw_album_art(art_x, art_y, art_size, m_window->get_album_art());
+    
+    float info_y = art_y + art_size + pad;
+    
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, pad, info_y, avail_w, 22,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.95f));
+    
+    float info_y2 = info_y + 24;
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, pad, info_y2, avail_w, 18,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.6f));
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    float pb_y = (float)size.cy - pad - PROGRESS_BAR_HEIGHT;
+    m_renderer->draw_progress_bar(art_x, pb_y, art_size, (float)PROGRESS_BAR_HEIGHT, progress,
+                                  D2DRenderer::rgba(1, 1, 1, 0.8f),
+                                  D2DRenderer::rgba(1, 1, 1, 0.15f));
+}
+
+void StyleRenderer::render_progress_ring(const CSize& size)
+{
+    float cx = (float)size.cx / 2;
+    float cy = (float)size.cy / 2 - 20;
+    float ring_radius = 60.0f;
+    float ring_thickness = 6.0f;
+    float art_size = 80.0f;
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    
+    m_renderer->draw_progress_ring(cx, cy, ring_radius, ring_thickness, progress,
+                                   D2DRenderer::rgba(1, 1, 1, 0.8f),
+                                   D2DRenderer::rgba(1, 1, 1, 0.15f));
+    
+    m_renderer->draw_album_art(cx - art_size/2, cy - art_size/2, art_size, m_window->get_album_art());
+    
+    float text_y = cy + ring_radius + 16;
+    float avail_w = (float)size.cx - WINDOW_PADDING * 2;
+    
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, (float)WINDOW_PADDING, text_y, avail_w, 18,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.95f));
+    
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, (float)WINDOW_PADDING, text_y + 20, avail_w, 16,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.6f));
+}
+
+void StyleRenderer::render_visualizer(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float avail_w = (float)size.cx - pad * 2;
+    float bar_area_h = (float)size.cy - 60;
+    const int bar_count = 32;
+    float bar_w = (avail_w - (bar_count - 1)) / bar_count;
+    
+    srand((int)(m_window->get_playback_time() * 100));
+    for (int i = 0; i < bar_count; i++) {
+        float h = (float)(rand() % 100) / 100.0f * bar_area_h;
+        float x = pad + i * (bar_w + 1);
+        float y = bar_area_h - h;
+        
+        float intensity = (float)i / bar_count;
+        m_renderer->get_brush()->SetColor(D2DRenderer::rgba(1.0f - intensity, intensity, 0.8f, 0.7f));
+        m_renderer->get_render_target()->FillRectangle(
+            D2D1::RectF(x, y, x + bar_w, bar_area_h), m_renderer->get_brush());
+    }
+    
+    float text_y = bar_area_h + 8;
+    pfc::string8 display;
+    display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
+    pfc::stringcvt::string_wide_from_utf8 wdisplay(display);
+    m_renderer->draw_text(wdisplay, pad, text_y, avail_w, 16,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.8f));
+}
+
+void StyleRenderer::render_lyrics_line(const CSize& size)
+{
+    float pad = (float)WINDOW_PADDING;
+    float avail_w = (float)size.cx - pad * 2;
+    
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, pad, pad, avail_w, 18,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.5f));
+    
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, pad, pad + 20, avail_w, 14,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.35f));
+    
+    float lyrics_y = (float)size.cy / 2 - 12;
+    m_renderer->draw_text(L"\u266B  Now Playing  \u266B", pad, lyrics_y, avail_w, 24,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::rgba(1, 1, 1, 0.8f));
+    
+    float progress = m_window->get_track_length() > 0 ?
+        (float)(m_window->get_playback_time() / m_window->get_track_length()) : 0;
+    m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
+                                   avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
+                                   D2DRenderer::rgba(1, 1, 1, 0.7f),
+                                   D2DRenderer::rgba(1, 1, 1, 0.1f));
+}
