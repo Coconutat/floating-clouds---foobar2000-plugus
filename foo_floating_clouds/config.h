@@ -87,8 +87,12 @@ constexpr int32_t BUTTON_SIZE = 24;
 constexpr int32_t BUTTON_SPACING = 8;
 constexpr int32_t PROGRESS_BAR_HEIGHT = 4;
 
+// Control buttons: prev, play/pause, next, mute, playlist picker.
+constexpr int32_t BUTTON_COUNT = 5;
+
 // --- Control-button row geometry (shared by hit-testing and style rendering) ---
-inline int32_t button_row_width()  { return 4 * BUTTON_SIZE + 3 * BUTTON_SPACING; }
+inline int32_t button_row_count() { return BUTTON_COUNT; }
+inline int32_t button_row_width()  { return BUTTON_COUNT * BUTTON_SIZE + (BUTTON_COUNT - 1) * BUTTON_SPACING; }
 inline int32_t button_row_start_x(int32_t window_cx) { return (window_cx - button_row_width()) / 2; }
 inline int32_t button_row_y(int32_t window_cy)       { return window_cy - WINDOW_PADDING - BUTTON_SIZE; }
 // Y of a progress bar that sits just above the button row.

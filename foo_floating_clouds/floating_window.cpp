@@ -15,6 +15,7 @@ FloatingCloudsWindow::FloatingCloudsWindow()
     : m_hotkeys(std::make_unique<HotkeyManager>())
     , m_playback_listener(std::make_unique<PlaybackListener>(this))
     , m_tray_icon(std::make_unique<TrayIcon>(this))
+    , m_playlist_panel(std::make_unique<PlaylistPanel>())
 {
 }
 
@@ -87,6 +88,7 @@ void FloatingCloudsWindow::OnDestroy()
 {
     if (s_instance == this) s_instance = nullptr;
     stop_anim_timer();
+    if (m_playlist_panel && m_playlist_panel->IsWindow()) m_playlist_panel->DestroyWindow();
     m_tray_icon->destroy();
     m_hotkeys->unregister_all();
     release_resources();
@@ -221,6 +223,20 @@ void FloatingCloudsWindow::OnLButtonUp(UINT nFlags, CPoint point)
                 case 1: api->play_or_pause(); break;
                 case 2: api->start(playback_control::track_command_next); break;
                 case 3: api->volume_mute_toggle(); break;
+                case 4: {
+                    // Playlist picker: show the D2D panel below/above the window.
+                    if (m_playlist_panel) {
+                        CRect r;
+                        GetWindowRect(&r);
+                        CPoint pos(r.left, r.bottom + 8);
+                        const int sh = GetSystemMetrics(SM_CYSCREEN);
+                        if (pos.y + PlaylistPanel::PANEL_HEIGHT > sh)
+                            pos.y = r.top - PlaylistPanel::PANEL_HEIGHT - 8;
+                        if (pos.y < 0) pos.y = 0;
+                        m_playlist_panel->open(m_hWnd, pos);
+                    }
+                    break;
+                }
             }
         }
     }
@@ -816,8 +832,8 @@ int FloatingCloudsWindow::hit_test_button(CPoint point)
 {
     if (!style_has_buttons(m_current_style)) return -1;
     
-    // Control button row: [<<] [Play/Pause] [>>] [Vol], bottom-centered.
-    const int btn_count = 4;
+    // Control button row: [<<] [Play/Pause] [>>] [Vol] [Playlist], bottom-centered.
+    const int btn_count = button_row_count();
     const int btn_spacing = BUTTON_SPACING;
     const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
     

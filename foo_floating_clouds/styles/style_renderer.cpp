@@ -63,14 +63,15 @@ void StyleRenderer::render_full(const CSize& size)
 
 void StyleRenderer::draw_button_row(const CSize& size)
 {
-    const int btn_count = 4;
+    const int btn_count = BUTTON_COUNT;
     const int btn_spacing = BUTTON_SPACING;
     const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
     float btn_start_x = ((float)size.cx - total_width) / 2;
     float btn_y = (float)button_row_y(size.cy);
 
-    const wchar_t* icons[btn_count] = { L"\u23EE", L"\u23EF", L"\u23ED", L"\U0001F507" };
-    bool active[btn_count] = { false, m_window->is_paused(), false, m_window->is_volume_muted() };
+    // prev, play/pause, next, mute, playlist picker
+    const wchar_t* icons[btn_count] = { L"\u23EE", L"\u23EF", L"\u23ED", L"\U0001F507", L"\u2630" };
+    bool active[btn_count] = { false, m_window->is_paused(), false, m_window->is_volume_muted(), false };
 
     for (int i = 0; i < btn_count; i++) {
         float btn_x = btn_start_x + i * (BUTTON_SIZE + btn_spacing);

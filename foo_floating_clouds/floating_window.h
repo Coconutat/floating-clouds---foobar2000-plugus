@@ -6,6 +6,7 @@
 #include "hotkey_manager.h"
 #include "playback_listener.h"
 #include "tray_icon.h"
+#include "playlist_panel.h"
 
 // ============================================================================
 // FloatingCloudsWindow - The main floating overlay window
@@ -184,6 +185,9 @@ private:
     
     // Real-time spectrum stream (Visualizer style)
     service_ptr_t<visualisation_stream> m_vis_stream;
+
+    // Playlist picker panel (button 5)
+    std::unique_ptr<PlaylistPanel> m_playlist_panel;
 
     // Lyrics state (embedded tag; LRC-synced or plain lines)
     pfc::string8 m_lyrics;

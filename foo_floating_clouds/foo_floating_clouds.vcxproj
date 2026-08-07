@@ -194,6 +194,7 @@
     <ClCompile Include="playback_listener.cpp" />
     <ClCompile Include="tray_icon.cpp" />
     <ClCompile Include="preferences.cpp" />
+    <ClCompile Include="playlist_panel.cpp" />
     <ClCompile Include="styles\style_renderer.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -206,6 +207,7 @@
     <ClInclude Include="playback_listener.h" />
     <ClInclude Include="tray_icon.h" />
     <ClInclude Include="preferences.h" />
+    <ClInclude Include="playlist_panel.h" />
     <ClInclude Include="styles\style_renderer.h" />
   </ItemGroup>
   <ItemGroup>
