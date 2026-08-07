@@ -539,6 +539,12 @@ void FloatingCloudsWindow::on_playback_stop()
     m_playback_time = 0.0;
     m_track_length = 0.0;
     m_target_progress = 0.0f;
+    m_lyric_lines.remove_all();
+    m_plain_lines.remove_all();
+    m_lyrics_has_lrc = false;
+    m_lyric_index = -1;
+    m_plain_index = -1;
+    m_lyrics.reset();
     start_anim_timer();
     
     // Auto-hide if configured
@@ -556,6 +562,27 @@ void FloatingCloudsWindow::on_playback_time(double time)
     m_target_progress = m_track_length > 0 ? (float)(time / m_track_length) : 0.0f;
     m_target_progress = std::clamp(m_target_progress, 0.0f, 1.0f);
     start_anim_timer(); // ease the displayed progress toward this target
+
+    // Sync lyrics to the current time.
+    if (m_lyrics_has_lrc && m_lyric_lines.get_size() > 0) {
+        int idx = -1;
+        for (t_size i = 0; i < m_lyric_lines.get_size(); i++) {
+            if (m_lyric_lines[i].time <= time) idx = (int)i; else break;
+        }
+        if (idx != m_lyric_index) {
+            m_lyric_index = idx;
+            Invalidate();
+        }
+    } else if (m_plain_lines.get_size() > 0 && m_track_length > 0) {
+        // Plain (no timestamps): walk lines proportionally to track progress.
+        int idx = (int)(time / m_track_length * m_plain_lines.get_size());
+        if (idx < 0) idx = 0;
+        if (idx >= (int)m_plain_lines.get_size()) idx = (int)m_plain_lines.get_size() - 1;
+        if (idx != m_plain_index) {
+            m_plain_index = idx;
+            Invalidate();
+        }
+    }
 }
 
 void FloatingCloudsWindow::on_playback_pause(bool paused)
@@ -642,6 +669,137 @@ bool FloatingCloudsWindow::get_visual_spectrum(float* bars, unsigned count)
         bars[b] = (float)m;
     }
     return true;
+}
+
+void FloatingCloudsWindow::on_lyrics_update(const char* text)
+{
+    m_lyric_lines.remove_all();
+    m_plain_lines.remove_all();
+    m_lyrics_has_lrc = false;
+    m_lyric_index = -1;
+    m_plain_index = -1;
+    if (text && *text) {
+        m_lyrics = text;
+        parse_lyrics(text);
+        FB2K_console_formatter() << "Floating Clouds: lyrics parsed lrc=" << (m_lyrics_has_lrc ? 1 : 0)
+            << " lines=" << (m_lyrics_has_lrc ? m_lyric_lines.get_size() : m_plain_lines.get_size());
+    } else {
+        m_lyrics.reset();
+    }
+    Invalidate();
+}
+
+const char* FloatingCloudsWindow::get_current_lyric_line() const
+{
+    if (m_lyrics_has_lrc) {
+        if (m_lyric_index >= 0 && m_lyric_index < (int)m_lyric_lines.get_size())
+            return m_lyric_lines[m_lyric_index].text;
+        return nullptr;
+    }
+    if (m_plain_index >= 0 && m_plain_index < (int)m_plain_lines.get_size())
+        return m_plain_lines[m_plain_index];
+    return nullptr;
+}
+
+namespace {
+// Trim leading/trailing spaces and tabs (independent of pfc::trim's signature).
+void trim_ws(pfc::string8& s)
+{
+    t_size len = s.length();
+    t_size start = 0;
+    while (start < len && (s[start] == ' ' || s[start] == '\t')) start++;
+    t_size end = len;
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r')) end--;
+    if (start == 0 && end == len) return;
+    pfc::string8 t(s.get_ptr() + start, end - start);
+    s = t;
+}
+}
+
+void FloatingCloudsWindow::parse_lyrics(const char* text)
+{
+    if (!text) return;
+    m_lyric_lines.remove_all();
+    m_plain_lines.remove_all();
+
+    const char* p = text;
+    bool any_lrc = false;
+
+    while (*p) {
+        const char* nl = strchr(p, '\n');
+        t_size len = nl ? (t_size)(nl - p) : (t_size)strlen(p);
+        pfc::string8 line(p, len);
+        p = nl ? nl + 1 : p + len;
+
+        if (!line.is_empty() && line[line.length() - 1] == '\r')
+            line.truncate(line.length() - 1);
+        if (line.is_empty()) continue;
+
+        // Collect leading [mm:ss(.xx)] timestamps (LRC).
+        pfc::list_t<double> times;
+        const char* s = line.get_ptr();
+        while (*s == '[') {
+            double t = parse_lrc_time(s);
+            if (t < 0.0) break;
+            times.add_item(t);
+            const char* close = strchr(s, ']');
+            s = close ? close + 1 : s + 1;
+        }
+
+        if (times.get_count() > 0) {
+            any_lrc = true;
+            pfc::string8 body(s);
+            trim_ws(body);
+            for (t_size i = 0; i < times.get_count(); i++) {
+                LyricLine ll;
+                ll.time = times[i];
+                ll.text = body;
+                m_lyric_lines.add_item(ll);
+            }
+        } else {
+            trim_ws(line);
+            if (!line.is_empty()) m_plain_lines.add_item(line);
+        }
+    }
+
+    m_lyrics_has_lrc = any_lrc && m_lyric_lines.get_size() > 0;
+    if (m_lyrics_has_lrc) {
+        // Insertion sort by start time (stable for equal timestamps).
+        for (t_size i = 1; i < m_lyric_lines.get_size(); i++) {
+            LyricLine key = m_lyric_lines[i];
+            t_size j = i;
+            while (j > 0 && m_lyric_lines[j - 1].time > key.time) {
+                m_lyric_lines[j] = m_lyric_lines[j - 1];
+                j--;
+            }
+            m_lyric_lines[j] = key;
+        }
+    }
+}
+
+double FloatingCloudsWindow::parse_lrc_time(const char* s)
+{
+    if (!s || *s != '[') return -1.0;
+    const char* close = strchr(s, ']');
+    if (!close) return -1.0;
+
+    const char* q = s + 1;
+    if (!isdigit((unsigned char)*q)) return -1.0;
+    int mm = 0;
+    while (isdigit((unsigned char)*q)) { mm = mm * 10 + (*q - '0'); q++; }
+    if (*q != ':') return -1.0;
+    q++;
+    if (!isdigit((unsigned char)*q)) return -1.0;
+    int ss = 0;
+    while (isdigit((unsigned char)*q)) { ss = ss * 10 + (*q - '0'); q++; }
+    double frac = 0.0;
+    if (*q == '.') {
+        q++;
+        double scale = 0.1;
+        while (isdigit((unsigned char)*q)) { frac += (*q - '0') * scale; scale *= 0.1; q++; }
+    }
+    if (q != close) return -1.0;
+    return (double)mm * 60.0 + (double)ss + frac;
 }
 
 void FloatingCloudsWindow::update_layered_window()

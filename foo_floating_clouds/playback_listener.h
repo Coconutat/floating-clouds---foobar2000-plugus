@@ -29,6 +29,7 @@ public:
 private:
     void update_track_info(metadb_handle_ptr p_track);
     void update_album_art(metadb_handle_ptr p_track);
+    void update_lyrics(metadb_handle_ptr p_track);
     
     FloatingCloudsWindow* m_window;
     

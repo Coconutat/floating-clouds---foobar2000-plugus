@@ -11,6 +11,12 @@
 // FloatingCloudsWindow - The main floating overlay window
 // ============================================================================
 
+// One synced lyric line (LRC). time = start time in seconds.
+struct LyricLine {
+    double time;
+    pfc::string8 text;
+};
+
 // NOTE: CWindowImpl<T> defaults to CControlWinTraits, which forces WS_CHILD.
 // A WS_CHILD window with no parent is never shown on the desktop, so we must
 // explicitly use top-level window traits (WS_POPUP) here.
@@ -103,6 +109,10 @@ public:
     // Fills `bars[count]` with a real-time FFT spectrum (0..1 per bar).
     // Returns false (bars zeroed) when no spectrum is available.
     bool get_visual_spectrum(float* bars, unsigned count);
+    // Embedded lyrics: called when the tag is read/updated; parses LRC or plain text.
+    void on_lyrics_update(const char* text);
+    // Current synced lyric line for the LyricsLine style (nullptr when none).
+    const char* get_current_lyric_line() const;
 
 private:
     // Window event handlers
@@ -139,6 +149,10 @@ private:
     // Hit test for buttons
     int hit_test_button(CPoint point);
 
+    // Lyrics parsing (LRC [mm:ss(.xx)] timestamps, plain-text fallback)
+    void parse_lyrics(const char* text);
+    static double parse_lrc_time(const char* s);
+
     // State
     bool m_drag_mode = false;
     bool m_visible = true;
@@ -170,6 +184,14 @@ private:
     
     // Real-time spectrum stream (Visualizer style)
     service_ptr_t<visualisation_stream> m_vis_stream;
+
+    // Lyrics state (embedded tag; LRC-synced or plain lines)
+    pfc::string8 m_lyrics;
+    pfc::list_t<LyricLine> m_lyric_lines;    // LRC mode: sorted by start time
+    pfc::list_t<pfc::string8> m_plain_lines; // plain mode: no timestamps
+    bool m_lyrics_has_lrc = false;
+    int m_lyric_index = -1;
+    int m_plain_index = -1;
     
     // Animation
     float m_anim_opacity = 1.0f;

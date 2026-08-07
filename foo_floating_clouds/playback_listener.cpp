@@ -37,6 +37,7 @@ void PlaybackListener::on_playback_new_track(metadb_handle_ptr p_track)
 {
     update_track_info(p_track);
     update_album_art(p_track);
+    update_lyrics(p_track);
 }
 
 void PlaybackListener::on_playback_stop(play_control::t_stop_reason p_reason)
@@ -57,6 +58,7 @@ void PlaybackListener::on_playback_pause(bool p_state)
 void PlaybackListener::on_playback_edited(metadb_handle_ptr p_track)
 {
     update_track_info(p_track);
+    update_lyrics(p_track);
 }
 
 void PlaybackListener::on_playback_dynamic_info(const file_info& p_info)
@@ -77,6 +79,51 @@ void PlaybackListener::on_playback_dynamic_info_track(const file_info& p_info)
 void PlaybackListener::on_playback_time(double p_time)
 {
     m_window->on_playback_time(p_time);
+}
+
+void PlaybackListener::update_lyrics(metadb_handle_ptr p_track)
+{
+    pfc::string8 lyrics;
+    metadb_info_container::ptr info;
+    const bool info_ok = p_track.is_valid() && p_track->get_info_ref(info);
+
+    // Case-insensitive "lyric" detection for arbitrary tag names.
+    auto name_has_lyric = [](const char* name) -> bool {
+        if (!name) return false;
+        for (const char* p = name; *p; p++) {
+            const char* q = p;
+            const char* key = "lyric";
+            while (*key && *q && pfc::ascii_tolower(*q) == *key) { q++; key++; }
+            if (!*key) return true;
+        }
+        return false;
+    };
+
+    if (info_ok) {
+        const file_info& fi = info->info();
+        // foobar2000 typically exposes embedded lyrics (ID3 USLT / Vorbis / APE) as "LYRICS".
+        const char* v = fi.meta_get("LYRICS", 0);
+        if (!v || !*v) v = fi.meta_get("UNSYNCEDLYRICS", 0);
+        if (!v || !*v) v = fi.meta_get("USLT", 0);
+        if (v && *v) lyrics = v;
+
+        if (lyrics.is_empty()) {
+            // Fallback: scan every meta entry for a lyric-ish name.
+            const t_size n = fi.meta_get_count();
+            for (t_size i = 0; i < n; i++) {
+                const char* name = fi.meta_enum_name(i);
+                if (name_has_lyric(name)) {
+                    const char* val = fi.meta_enum_value(i, 0);
+                    if (val && *val) { lyrics = val; break; }
+                }
+            }
+        }
+    }
+
+    FB2K_console_formatter() << "Floating Clouds: lyrics info_ok=" << (info_ok ? 1 : 0)
+        << " len=" << lyrics.length()
+        << (lyrics.is_empty() ? " (NONE - see File Properties > metadata for actual tag names)" : "");
+    m_window->on_lyrics_update(lyrics);
 }
 
 void PlaybackListener::on_volume_change(float p_new_val)

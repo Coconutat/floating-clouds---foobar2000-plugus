@@ -240,9 +240,17 @@ void StyleRenderer::render_lyrics_line(const CSize& size)
                           D2DRenderer::hex(md3::on_surface_variant, 0.5f));
     
     float lyrics_y = (float)size.cy / 2 - 12;
-    m_renderer->draw_text(L"\u266B  Now Playing  \u266B", pad, lyrics_y, avail_w, 24,
-                          m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.9f));
+    const char* lyric = m_window->get_current_lyric_line();
+    if (lyric && *lyric) {
+        pfc::stringcvt::string_wide_from_utf8 wlyric(lyric);
+        m_renderer->draw_text(wlyric, pad, lyrics_y, avail_w, 24,
+                              m_renderer->get_title_format(),
+                              D2DRenderer::hex(md3::on_surface, 0.9f));
+    } else {
+        m_renderer->draw_text(L"\u266B  Now Playing  \u266B", pad, lyrics_y, avail_w, 24,
+                              m_renderer->get_title_format(),
+                              D2DRenderer::hex(md3::on_surface, 0.9f));
+    }
     
     float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,

@@ -7,7 +7,7 @@
 
 DECLARE_COMPONENT_VERSION(
     "Floating Clouds",
-    "0.1.0",
+    "0.1.5",
     "A floating UI overlay for foobar2000 - shows now playing info on desktop or over games."
 );
 
