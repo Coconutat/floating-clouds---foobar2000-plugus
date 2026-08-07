@@ -33,16 +33,13 @@ namespace cfg_guids {
 
 // Style enum
 enum class FloatingStyle : int32_t {
-    Mini = 0,
-    MiniArt = 1,
-    Full = 2,
-    // Extended styles (future)
-    MinimalLine = 3,
-    AlbumFocus = 4,
-    ProgressRing = 5,
-    Visualizer = 6,
-    LyricsLine = 7,
-    Count = 8
+    Minimal = 0,      // was MinimalLine(3); absorbs Mini(0)
+    Full = 1,         // was Full(2); absorbs MiniArt(1)
+    AlbumFocus = 2,   // was 4
+    ProgressRing = 3, // was 5
+    Visualizer = 4,   // was 6
+    LyricsLine = 5,   // was 7
+    Count = 6
 };
 
 // Hotkey defaults (all customizable in Preferences > Components > Floating Clouds)
@@ -80,16 +77,11 @@ constexpr int32_t WINDOW_PADDING = 12;
 constexpr int32_t WINDOW_CORNER_RADIUS = 12;
 
 // Style sizing
-constexpr int32_t STYLE_MINI_HEIGHT = 40;
-constexpr int32_t STYLE_MINIART_HEIGHT = 116; // taller: bottom control-button row
 constexpr int32_t STYLE_FULL_HEIGHT = 140;
 // Fixed widths per style: the window never resizes with text length.
 // Long titles scroll (marquee) inside their fixed width instead.
-constexpr int32_t STYLE_MINI_WIDTH = 300;
-constexpr int32_t STYLE_MINIART_WIDTH = 380;
+constexpr int32_t STYLE_MINIMAL_WIDTH = 360;
 constexpr int32_t STYLE_FULL_WIDTH = 400;
-constexpr int32_t STYLE_MINIMAL_LINE_WIDTH = 360;
-constexpr int32_t COVER_ART_SIZE = 56;
 constexpr int32_t COVER_ART_SIZE_FULL = 64;
 constexpr int32_t BUTTON_SIZE = 24;
 constexpr int32_t BUTTON_SPACING = 8;
@@ -107,13 +99,26 @@ inline int32_t progress_above_buttons_y(int32_t window_cy) {
 // Which styles render a control-button row (tiny / special-purpose styles omit it).
 inline bool style_has_buttons(FloatingStyle s) {
     switch (s) {
-        case FloatingStyle::MiniArt:
         case FloatingStyle::Full:
         case FloatingStyle::AlbumFocus:
         case FloatingStyle::ProgressRing:
         case FloatingStyle::Visualizer:
             return true;
         default:
-            return false; // Mini, MinimalLine (single-line) and LyricsLine (lyrics overlay)
+            return false; // Minimal (single-line) and LyricsLine (lyrics overlay)
+    }
+}
+
+// One-time migration from the old 8-style numbering (Mini=0..LyricsLine=7)
+// to the new 6-style numbering. Applied when loading the persisted style.
+inline int32_t migrate_style(int32_t old) {
+    switch (old) {
+        case 0: case 3: return 0; // Mini, MinimalLine -> Minimal
+        case 1: case 2: return 1; // MiniArt, Full -> Full
+        case 4: return 2;         // AlbumFocus
+        case 5: return 3;         // ProgressRing
+        case 6: return 4;         // Visualizer
+        case 7: return 5;         // LyricsLine
+        default: return 1;        // unknown -> Full (default)
     }
 }

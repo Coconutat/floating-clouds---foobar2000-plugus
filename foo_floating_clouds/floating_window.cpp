@@ -3,6 +3,8 @@
 #include "config.h"
 #include "styles/style_renderer.h"
 
+#include <SDK/audio_chunk_impl.h>
+
 // ============================================================================
 // FloatingCloudsWindow implementation
 // ============================================================================
@@ -106,9 +108,10 @@ void FloatingCloudsWindow::apply_preferences()
     // Opacity
     s_instance->update_layered_window();
 
-    // Style: switch if changed, otherwise just repaint
+    // Style: switch if changed, otherwise just repaint.
+    // Migrate the saved style number (old 8-style enum -> new 6-style enum).
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-    FloatingStyle st = static_cast<FloatingStyle>((int32_t)cfg_style.get_value());
+    FloatingStyle st = static_cast<FloatingStyle>(migrate_style((int32_t)cfg_style.get_value()));
     if (st != s_instance->m_current_style) {
         s_instance->set_style(st);
     } else {
@@ -459,6 +462,11 @@ void FloatingCloudsWindow::on_anim_tick()
         stop_anim_timer();
         return;
     }
+    // Visualizer animates continuously: keep the frame loop alive.
+    if (m_current_style == FloatingStyle::Visualizer) {
+        Invalidate();
+        return;
+    }
     if (m_marquee_active) {
         Invalidate(); // keep redrawing to advance the scrolling title
         return;       // keep the frame loop running
@@ -486,6 +494,11 @@ void FloatingCloudsWindow::set_style(FloatingStyle style)
     CRect rect;
     GetWindowRect(&rect);
     SetWindowPos(NULL, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER);
+    
+    // Visualizer animates continuously -> make sure the frame loop is running.
+    if (m_current_style == FloatingStyle::Visualizer && m_visible) {
+        start_anim_timer();
+    }
     
     Invalidate();
 }
@@ -562,17 +575,11 @@ CSize FloatingCloudsWindow::calculate_size()
     // Fixed sizes per style: the window never resizes with text length.
     // Long titles scroll (marquee) inside their fixed width instead.
     switch (m_current_style) {
-        case FloatingStyle::Mini:
-            return CSize(STYLE_MINI_WIDTH, STYLE_MINI_HEIGHT);
-        
-        case FloatingStyle::MiniArt:
-            return CSize(STYLE_MINIART_WIDTH, STYLE_MINIART_HEIGHT);
+        case FloatingStyle::Minimal:
+            return CSize(STYLE_MINIMAL_WIDTH, 32);
         
         case FloatingStyle::Full:
             return CSize(STYLE_FULL_WIDTH, STYLE_FULL_HEIGHT);
-        
-        case FloatingStyle::MinimalLine:
-            return CSize(STYLE_MINIMAL_LINE_WIDTH, 32);
         
         case FloatingStyle::AlbumFocus:
             return CSize(320, 400);
@@ -587,8 +594,54 @@ CSize FloatingCloudsWindow::calculate_size()
             return CSize(400, 120);
         
         default:
-            return CSize(STYLE_MINI_WIDTH, STYLE_MINI_HEIGHT);
+            return CSize(STYLE_FULL_WIDTH, STYLE_FULL_HEIGHT);
     }
+}
+
+bool FloatingCloudsWindow::get_visual_spectrum(float* bars, unsigned count)
+{
+    if (!bars || count == 0) return false;
+    for (unsigned i = 0; i < count; i++) bars[i] = 0.0f;
+
+    // Lazily create the real-time spectrum stream (NewFFT: normalized ~0..1).
+    if (!m_vis_stream.is_valid()) {
+        try {
+            visualisation_manager::get()->create_stream(m_vis_stream,
+                visualisation_manager::KStreamFlagNewFFT);
+        } catch (...) {
+            return false;
+        }
+    }
+    if (!m_vis_stream.is_valid()) return false;
+
+    double t = 0;
+    if (!m_vis_stream->get_absolute_time(t)) return false;
+
+    audio_chunk_impl spectrum;
+    if (!m_vis_stream->get_spectrum_absolute(spectrum, t, 512)) return false;
+
+    const audio_sample* data = spectrum.get_data();
+    const t_size samples = spectrum.get_sample_count(); // == fft_size / 2
+    const unsigned chans = spectrum.get_channels();
+    if (!data || samples <= 0 || chans == 0) return false;
+
+    // Map FFT bins to `count` bars (linear groups, max per group, averaged
+    // across channels).
+    for (unsigned b = 0; b < count; b++) {
+        t_size start = (t_size)b * samples / count;
+        t_size end = (t_size)(b + 1) * samples / count;
+        if (end <= start) end = start + 1;
+        if (end > samples) end = samples;
+        double m = 0.0;
+        for (t_size s = start; s < end; s++) {
+            double v = 0.0;
+            for (unsigned c = 0; c < chans; c++) v += data[s * chans + c];
+            v /= (double)chans;
+            if (v > m) m = v;
+        }
+        bars[b] = (float)m;
+    }
+    return true;
 }
 
 void FloatingCloudsWindow::update_layered_window()

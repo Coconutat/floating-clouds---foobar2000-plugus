@@ -10,8 +10,7 @@ A foobar2000 component that displays a floating UI overlay on your desktop or ov
 ## Features
 
 - **Floating overlay** — independent window that stays on top of desktop or games
-- **3 core styles** — Mini, Mini Art, Full (with playback controls)
-- **5 extended styles** — Minimal Line, Album Focus, Progress Ring, Visualizer, Lyrics Line
+- **6 styles** — Minimal, Full, Album Focus, Progress Ring, Visualizer, Lyrics Line
 - **Customizable global hotkeys** — toggle drag mode, show/hide, cycle styles (works in fullscreen games)
 - **Click-through** — buttons are clickable, rest is transparent to input
 - **Dark / HUD-style** — semi-transparent dark panel, large rounded corners

@@ -18,108 +18,14 @@ StyleRenderer::~StyleRenderer()
 void StyleRenderer::render(FloatingStyle style, const CSize& window_size)
 {
     switch (style) {
-        case FloatingStyle::Mini:           render_mini(window_size); break;
-        case FloatingStyle::MiniArt:        render_mini_art(window_size); break;
+        case FloatingStyle::Minimal:        render_minimal(window_size); break;
         case FloatingStyle::Full:           render_full(window_size); break;
-        case FloatingStyle::MinimalLine:    render_minimal_line(window_size); break;
         case FloatingStyle::AlbumFocus:     render_album_focus(window_size); break;
         case FloatingStyle::ProgressRing:   render_progress_ring(window_size); break;
         case FloatingStyle::Visualizer:     render_visualizer(window_size); break;
         case FloatingStyle::LyricsLine:     render_lyrics_line(window_size); break;
-        default:                            render_mini(window_size); break;
+        default:                            render_full(window_size); break;
     }
-}
-
-CSize StyleRenderer::calculate_size(FloatingStyle style, const pfc::string8& title, const pfc::string8& artist)
-{
-    int text_width = 200;
-    if (title.length() > 0) {
-        text_width = (std::max)(text_width, (int)title.length() * 7 + (int)artist.length() * 6);
-    }
-    text_width = (std::min)(text_width, 500);
-
-    switch (style) {
-        case FloatingStyle::Mini:
-            return CSize(text_width + WINDOW_PADDING * 2, STYLE_MINI_HEIGHT);
-        case FloatingStyle::MiniArt:
-            return CSize(text_width + COVER_ART_SIZE + WINDOW_PADDING * 3, STYLE_MINIART_HEIGHT);
-        case FloatingStyle::Full:
-            return CSize((std::max)(text_width, COVER_ART_SIZE_FULL + 160) + WINDOW_PADDING * 2, STYLE_FULL_HEIGHT);
-        case FloatingStyle::MinimalLine:
-            return CSize(text_width + WINDOW_PADDING * 2, 32);
-        case FloatingStyle::AlbumFocus:
-            return CSize(320, 400);
-        case FloatingStyle::ProgressRing:
-            return CSize(200, 240);
-        case FloatingStyle::Visualizer:
-            return CSize(320, 200);
-        case FloatingStyle::LyricsLine:
-            return CSize(400, 120);
-        default:
-            return CSize(300, STYLE_MINI_HEIGHT);
-    }
-}
-
-void StyleRenderer::render_mini(const CSize& size)
-{
-    float pad = (float)WINDOW_PADDING;
-    float avail_w = (float)size.cx - pad * 2;
-    float y = pad;
-    
-    const char* ctitle = m_window->get_title();
-    pfc::stringcvt::string_wide_from_utf8 wtitle(ctitle);
-    if (strlen(ctitle) > 0) {
-        m_renderer->draw_text(wtitle, pad, y, avail_w, 18,
-                              m_renderer->get_title_format(),
-                              D2DRenderer::hex(md3::on_surface, 0.95f));
-        y += 18;
-    }
-    
-    const char* cartist = m_window->get_artist();
-    pfc::stringcvt::string_wide_from_utf8 wartist(cartist);
-    if (strlen(cartist) > 0) {
-        m_renderer->draw_text(wartist, pad, y, avail_w, 16,
-                              m_renderer->get_artist_format(),
-                              D2DRenderer::hex(md3::on_surface_variant, 0.85f));
-        y += 16;
-    }
-    
-    float progress = m_window->get_display_progress();
-    m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
-                                   avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
-                                   D2DRenderer::hex(md3::primary, 0.9f),
-                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
-}
-
-void StyleRenderer::render_mini_art(const CSize& size)
-{
-    float pad = (float)WINDOW_PADDING;
-    float art_size = (float)COVER_ART_SIZE;
-    float avail_w = (float)size.cx - pad * 3 - art_size;
-    float y = pad;
-    
-    m_renderer->draw_album_art(pad, pad, art_size, m_window->get_album_art());
-    
-    float text_x = pad + art_size + pad;
-    
-    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
-    m_renderer->draw_text(wtitle, text_x, y, avail_w, 18,
-                          m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.95f));
-    y += 20;
-    
-    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
-    m_renderer->draw_text(wartist, text_x, y, avail_w, 16,
-                          m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.85f));
-    
-    float progress = m_window->get_display_progress();
-    float pb_y = (float)progress_above_buttons_y(size.cy);
-    m_renderer->draw_progress_bar(text_x, pb_y, avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
-                                  D2DRenderer::hex(md3::primary, 0.9f),
-                                  D2DRenderer::hex(md3::on_surface_variant, 0.25f));
-
-    draw_button_row(size);
 }
 
 void StyleRenderer::render_full(const CSize& size)
@@ -186,7 +92,7 @@ void StyleRenderer::draw_button_row(const CSize& size)
     }
 }
 
-void StyleRenderer::render_minimal_line(const CSize& size)
+void StyleRenderer::render_minimal(const CSize& size)
 {
     float pad = 8;
     float avail_w = (float)size.cx - pad * 2;
@@ -281,13 +187,20 @@ void StyleRenderer::render_visualizer(const CSize& size)
     float bar_area_h = (float)button_row_y(size.cy) - 8.0f - 16.0f - 8.0f;
     const int bar_count = 32;
     float bar_w = (avail_w - (bar_count - 1)) / bar_count;
-    
-    srand((int)(m_window->get_playback_time() * 100));
+
+    // Real-time FFT spectrum (0..1 per bar); bars stay flat when playback is
+    // stopped or no spectrum is available yet.
+    float bars[bar_count] = {};
+    m_window->get_visual_spectrum(bars, bar_count);
+
     for (int i = 0; i < bar_count; i++) {
-        float h = (float)(rand() % 100) / 100.0f * bar_area_h;
+        float v = bars[i] * 1.8f; // boost for a livelier look
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        float h = v * bar_area_h;
         float x = pad + i * (bar_w + 1);
         float y = bar_area_h - h;
-        
+
         float intensity = (float)i / bar_count;
         // MD3 accent ramp: primary (lavender) -> tertiary (pink)
         const uint32_t c1 = md3::primary;

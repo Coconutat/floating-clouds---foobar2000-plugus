@@ -100,6 +100,9 @@ public:
     // Hovered / pressed control-button index (MD3 state feedback), -1 if none
     int get_hover_button() const { return m_hover_button; }
     int get_pressed_button() const { return m_pressed_button; }
+    // Fills `bars[count]` with a real-time FFT spectrum (0..1 per bar).
+    // Returns false (bars zeroed) when no spectrum is available.
+    bool get_visual_spectrum(float* bars, unsigned count);
 
 private:
     // Window event handlers
@@ -164,6 +167,9 @@ private:
     
     // Tray icon
     std::unique_ptr<TrayIcon> m_tray_icon;
+    
+    // Real-time spectrum stream (Visualizer style)
+    service_ptr_t<visualisation_stream> m_vis_stream;
     
     // Animation
     float m_anim_opacity = 1.0f;

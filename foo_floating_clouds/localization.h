@@ -24,10 +24,8 @@ inline const wchar_t* tr(const wchar_t* en, const wchar_t* zh)
 inline const wchar_t* tr_style(FloatingStyle s)
 {
     switch (s) {
-        case FloatingStyle::Mini: return tr(L"Mini", L"极简");
-        case FloatingStyle::MiniArt: return tr(L"Mini Art", L"小方块");
+        case FloatingStyle::Minimal: return tr(L"Minimal", L"极简");
         case FloatingStyle::Full: return tr(L"Full", L"完整");
-        case FloatingStyle::MinimalLine: return tr(L"Minimal Line", L"极简线");
         case FloatingStyle::AlbumFocus: return tr(L"Album Focus", L"专辑焦点");
         case FloatingStyle::ProgressRing: return tr(L"Progress Ring", L"进度环");
         case FloatingStyle::Visualizer: return tr(L"Visualizer", L"可视化");
