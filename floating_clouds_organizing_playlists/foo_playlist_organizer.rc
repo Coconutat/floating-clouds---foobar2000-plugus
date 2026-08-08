@@ -1,0 +1,23 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "winres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+// Preferences dialog
+IDD_PREFERENCES DIALOGEX 0, 0, 240, 76
+STYLE DS_SETFONT | WS_CHILD
+FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "Language",IDC_GRP_LANGUAGE,8,8,224,56
+    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,20,24,64,8
+    COMBOBOX        IDC_LANGUAGE,92,22,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+END
+#endif
