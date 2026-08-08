@@ -12,10 +12,11 @@ public:
     D2DRenderer();
     virtual ~D2DRenderer();
 
-    // Initialize D2D resources
+    // Initialize D2D resources (picks the present mode: DirectComposition when
+    // available, else the uniform-alpha HwndRenderTarget fallback).
     bool initialize(HWND hwnd);
     
-    // Release and recreate resources (on resize, DPI change, etc.)
+    // Release and recreate resources (on resize, DPI change, device reset, etc.)
     void release_resources();
     bool create_resources();
     
@@ -23,8 +24,27 @@ public:
     bool begin_draw();
     void end_draw();
     
-    // Clear with a semi-transparent dark background
+    // Clear background. In DComp mode clears to fully transparent (the surface
+    // card + shadow come from draw_surface_card); in the Hwnd fallback it paints
+    // the opaque surface color (per-pixel alpha is ignored there).
     void clear_background(float opacity = 0.6f);
+
+    // Present mode: DirectComposition (GPU per-pixel alpha) or the
+    // HwndRenderTarget + LWA_ALPHA uniform-alpha fallback.
+    enum class PresentMode { None, Hwnd, DComp };
+
+    // Present mode
+    bool is_dcomp() const { return m_mode == PresentMode::DComp; }
+    PresentMode get_present_mode() const { return m_mode; }
+
+    // Global window opacity (DComp: applied to the composition visual).
+    void set_global_opacity(float opacity);
+
+    // Rounded surface card + elevation shadow (DComp) / opaque fill (fallback).
+    void draw_surface_card(const D2D1_RECT_F& rect, float radius);
+
+    // Recreate the present target for a new client size.
+    void on_resize(CSize size);
     
     // Draw rounded rectangle background
     void draw_rounded_rect(const D2D1_RECT_F& rect, float radius, 
@@ -58,7 +78,7 @@ public:
     float measure_text_width(const wchar_t* text, IDWriteTextFormat* format);
     
     // Getters
-    ID2D1HwndRenderTarget* get_render_target() const { return m_render_target; }
+    ID2D1RenderTarget* get_render_target() const { return m_render_target; }
     ID2D1SolidColorBrush* get_brush() const { return m_brush; }
     IDWriteFactory* get_dwrite_factory() const { return m_dwrite_factory; }
     IWICImagingFactory* get_wic_factory() const { return m_wic_factory; }
@@ -80,10 +100,30 @@ public:
 
 protected:
     HWND m_hwnd = nullptr;
-    
-    // Direct2D
-    ID2D1Factory* m_d2d_factory = nullptr;
-    ID2D1HwndRenderTarget* m_render_target = nullptr;
+
+    PresentMode m_mode = PresentMode::None;
+
+    // Direct2D 1.1 / D3D11 / DirectComposition
+    ID2D1Factory1* m_d2d_factory = nullptr;
+    ID2D1RenderTarget* m_render_target = nullptr;   // active drawing target
+    ID2D1HwndRenderTarget* m_hwnd_target = nullptr; // Hwnd fallback target
+    ID2D1DeviceContext* m_dc = nullptr;             // DComp target
+    ID3D11Device* m_d3d_device = nullptr;
+    IDXGIDevice* m_dxgi_device = nullptr;
+    ID2D1Device* m_d2d_device = nullptr;
+    IDCompositionDesktopDevice* m_dcomp_device = nullptr;
+    IDCompositionTarget* m_dcomp_target = nullptr;
+    IDCompositionVisual3* m_root_visual = nullptr;
+    IDCompositionSurface* m_surface = nullptr;
+    ID2D1Bitmap1* m_target_bitmap = nullptr;        // per-frame DComp surface target
+    SIZE m_surface_size{};
+    float m_global_opacity = 1.0f;
+
+    // Surface-card shadow (DComp mode): blurred rounded-rect source + effects
+    ID2D1Bitmap1* m_shadow_source = nullptr;
+    ID2D1Effect* m_shadow_ambient = nullptr;
+    ID2D1Effect* m_shadow_key = nullptr;
+
     ID2D1SolidColorBrush* m_brush = nullptr;
     
     // DirectWrite
@@ -108,6 +148,12 @@ protected:
 
     // Set when the last frame scrolled any long text; keeps the frame loop alive
     bool m_marquee_active = false;
+
+    // Internal: build the DComp (GPU per-pixel alpha) or Hwnd (fallback) stack.
+    bool create_dcomp_resources();
+    bool create_hwnd_resources();
+    bool create_brush_and_stroke();
+    bool create_shadow();
 
     // Internal: horizontally scroll `text` inside the box (used by draw_text)
     void draw_text_marquee(const wchar_t* text, float x, float y, float width, float height,

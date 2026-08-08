@@ -26,6 +26,9 @@ PlaylistPanel::~PlaylistPanel()
 LRESULT PlaylistPanel::OnCreate(LPCREATESTRUCT cs)
 {
     D2DRenderer::initialize(m_hWnd);
+    // Match the window's extended style to the present mode.
+    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | (is_dcomp() ? WS_EX_NOREDIRECTIONBITMAP : WS_EX_LAYERED);
+    SetWindowLong(GWL_EXSTYLE, ex_style);
     return 0;
 }
 
@@ -52,7 +55,6 @@ void PlaylistPanel::open(HWND parent, const CPoint& screen_pos)
     m_hover_row = -1;
     m_size = CSize(PANEL_WIDTH, PANEL_HEIGHT);
 
-    ::SetLayeredWindowAttributes(m_hWnd, 0, 255, LWA_ALPHA);
     SetWindowPos(NULL, screen_pos.x, screen_pos.y, PANEL_WIDTH, PANEL_HEIGHT,
                  SWP_NOZORDER | SWP_SHOWWINDOW);
     m_open = true;
@@ -77,9 +79,7 @@ BOOL PlaylistPanel::OnEraseBkgnd(CDCHandle dc)
 void PlaylistPanel::OnSize(UINT nType, CSize size)
 {
     m_size = size;
-    if (m_render_target) {
-        m_render_target->Resize(D2D1::SizeU(size.cx, size.cy));
-    }
+    on_resize(size);
 }
 
 void PlaylistPanel::OnPaint(CDCHandle dc)
@@ -87,15 +87,35 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     CPaintDC paint_dc(m_hWnd);
     if (!begin_draw()) return;
 
-    // Opaque MD3 surface (Clear alpha is ignored under LWA_ALPHA uniform alpha).
-    clear_background(1.0f);
+    const bool dcomp = is_dcomp();
+    const float inset = dcomp ? (float)SHADOW_INSET : 0.0f;
+    const float hdr_y = inset;
+    const float hdr_h = (float)HEADER_H;
+
+    if (dcomp) {
+        // Per-pixel alpha: clear transparent, draw the rounded card + shadow.
+        clear_background(0.0f);
+        draw_surface_card(D2D1::RectF(inset, inset, (float)m_size.cx - inset, (float)m_size.cy - inset),
+                          (float)WINDOW_CORNER_RADIUS);
+    } else {
+        // Uniform-alpha fallback: opaque MD3 surface.
+        clear_background(1.0f);
+    }
 
     const int rows = m_in_tracks ? (int)m_tracks.get_size() : (int)m_playlists.get_size();
     const float W = (float)m_size.cx;
 
-    // Header background
+    // Header background (rounded top corners in DComp mode to follow the card)
     m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 1.0f));
-    m_render_target->FillRectangle(D2D1::RectF(0, 0, W, (float)HEADER_H), m_brush);
+    if (dcomp) {
+        m_render_target->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(inset, hdr_y, W - inset, hdr_y + hdr_h),
+                              (float)WINDOW_CORNER_RADIUS, (float)WINDOW_CORNER_RADIUS), m_brush);
+        m_render_target->FillRectangle(
+            D2D1::RectF(inset, hdr_y + (float)WINDOW_CORNER_RADIUS, W - inset, hdr_y + hdr_h), m_brush);
+    } else {
+        m_render_target->FillRectangle(D2D1::RectF(0, 0, W, hdr_h), m_brush);
+    }
 
     // Header title
     const char* title = "Playlists";
@@ -103,44 +123,45 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
         title = m_playlists[m_sel_playlist];
     pfc::stringcvt::string_wide_from_utf8 wtitle(title);
     m_brush->SetColor(D2DRenderer::hex(md3::on_surface, 0.95f));
-    D2D1_RECT_F title_rect = D2D1::RectF((float)(PAD + BTN_W), 0, W - (float)(BTN_W + PAD), (float)HEADER_H);
+    D2D1_RECT_F title_rect = D2D1::RectF((float)(PAD + BTN_W), hdr_y, W - (float)(BTN_W + PAD), hdr_y + hdr_h);
     m_render_target->DrawText((const wchar_t*)wtitle, (UINT32)wcslen((const wchar_t*)wtitle),
                               get_title_format(), title_rect, m_brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
     // Back button (track view)
     if (m_in_tracks) {
         m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
-        D2D1_RECT_F back_rect = D2D1::RectF((float)PAD, 0, (float)(PAD + BTN_W), (float)HEADER_H);
+        D2D1_RECT_F back_rect = D2D1::RectF((float)PAD, hdr_y, (float)(PAD + BTN_W), hdr_y + hdr_h);
         m_render_target->DrawText(L"\u2190", 1, get_title_format(), back_rect, m_brush,
                                   D2D1_DRAW_TEXT_OPTIONS_NONE);
     }
 
     // Close button
     m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
-    D2D1_RECT_F close_rect = D2D1::RectF(W - (float)(BTN_W + PAD), 0, W - (float)PAD, (float)HEADER_H);
+    D2D1_RECT_F close_rect = D2D1::RectF(W - (float)(BTN_W + PAD), hdr_y, W - (float)PAD, hdr_y + hdr_h);
     m_render_target->DrawText(L"\u00D7", 1, get_title_format(), close_rect, m_brush,
                               D2D1_DRAW_TEXT_OPTIONS_NONE);
 
-    // List rows (only the visible slice)
+    // List rows (only the visible slice), within the card bounds
+    const float list_left = inset + (float)PAD;
+    const float text_w = W - 2.0f * inset - (float)(PAD + SCROLL_W + 4);
     for (int i = 0; i < rows; i++) {
-        const float ry = (float)HEADER_H - m_scroll + i * (float)ROW_H;
+        const float ry = hdr_y + hdr_h - m_scroll + i * (float)ROW_H;
         if (ry + ROW_H < 0 || ry > m_size.cy) continue;
 
         if (i == m_hover_row) {
             m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
-            m_render_target->FillRectangle(D2D1::RectF(0, ry, W, ry + ROW_H), m_brush);
+            m_render_target->FillRectangle(D2D1::RectF(inset, ry, W - inset, ry + ROW_H), m_brush);
         }
 
         const char* text = m_in_tracks ? (const char*)m_tracks[i] : (const char*)m_playlists[i];
         pfc::stringcvt::string_wide_from_utf8 wtext(text);
-        const float text_w = W - (float)(PAD + SCROLL_W + 4);
         if (i == m_hover_row) {
             // Hovered row auto-scrolls (marquee) so long titles stay readable.
-            draw_text(wtext, (float)PAD, ry, text_w - (float)PAD, (float)ROW_H,
+            draw_text(wtext, list_left, ry, text_w - (float)PAD, (float)ROW_H,
                       get_title_format(), D2DRenderer::hex(md3::on_surface, 0.9f));
         } else {
             m_brush->SetColor(D2DRenderer::hex(md3::on_surface, 0.9f));
-            D2D1_RECT_F tr = D2D1::RectF((float)PAD, ry, text_w, ry + ROW_H);
+            D2D1_RECT_F tr = D2D1::RectF(list_left, ry, text_w, ry + ROW_H);
             m_render_target->DrawText((const wchar_t*)wtext, (UINT32)wcslen((const wchar_t*)wtext),
                                       get_title_format(), tr, m_brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
@@ -149,14 +170,14 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     // Scrollbar (only when the content overflows)
     const float max_sc = max_scroll();
     if (max_sc > 0.0f) {
-        const float view_h = (float)m_size.cy - HEADER_H - PAD;
-        const float content_h = (float)HEADER_H + rows * (float)ROW_H + PAD;
+        const float view_h = (float)m_size.cy - (float)content_top() - inset;
+        const float content_h = rows * (float)ROW_H;
         float thumb_h = view_h * view_h / content_h;
         if (thumb_h < 20.0f) thumb_h = 20.0f;
-        const float thumb_y = (float)HEADER_H + (m_scroll / max_sc) * (view_h - thumb_h);
+        const float thumb_y = (float)content_top() + (m_scroll / max_sc) * (view_h - thumb_h);
         m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.6f));
         m_render_target->FillRectangle(
-            D2D1::RectF(W - (float)(SCROLL_W + 2), thumb_y, W - 2.0f, thumb_y + thumb_h), m_brush);
+            D2D1::RectF(W - inset - (float)(SCROLL_W + 2), thumb_y, W - inset - 2.0f, thumb_y + thumb_h), m_brush);
     }
 
     end_draw();
@@ -266,33 +287,42 @@ void PlaylistPanel::stop_marquee_timer()
 
 int PlaylistPanel::row_at(CPoint point) const
 {
-    if (point.y < HEADER_H) return -1;
+    if (point.y < content_top()) return -1;
     const int rows = m_in_tracks ? (int)m_tracks.get_size() : (int)m_playlists.get_size();
-    const int idx = (int)((point.y - HEADER_H + m_scroll) / ROW_H);
+    const int idx = (int)((point.y - content_top() + m_scroll) / ROW_H);
     if (idx < 0 || idx >= rows) return -1;
     return idx;
 }
 
 bool PlaylistPanel::in_header(CPoint point) const
 {
-    return point.y < HEADER_H;
+    return point.y < content_top();
 }
 
 bool PlaylistPanel::hit_back(CPoint point) const
 {
-    return m_in_tracks && point.y < HEADER_H && point.x < PAD + BTN_W;
+    const int lx = is_dcomp() ? SHADOW_INSET : 0;
+    return m_in_tracks && point.y < content_top() && point.x < lx + PAD + BTN_W;
 }
 
 bool PlaylistPanel::hit_close(CPoint point) const
 {
-    return point.y < HEADER_H && point.x > m_size.cx - PAD - BTN_W;
+    const int lx = is_dcomp() ? SHADOW_INSET : 0;
+    return point.y < content_top() && point.x > m_size.cx - lx - PAD - BTN_W;
+}
+
+int PlaylistPanel::content_top() const
+{
+    return (is_dcomp() ? SHADOW_INSET : 0) + HEADER_H;
 }
 
 float PlaylistPanel::max_scroll() const
 {
     const int rows = m_in_tracks ? (int)m_tracks.get_size() : (int)m_playlists.get_size();
-    const float content_h = (float)HEADER_H + rows * (float)ROW_H + PAD;
-    return content_h > (float)m_size.cy ? content_h - (float)m_size.cy : 0.0f;
+    const int inset = is_dcomp() ? SHADOW_INSET : 0;
+    const float view_h = (float)(m_size.cy - content_top() - inset);
+    const float content_h = rows * (float)ROW_H;
+    return content_h > view_h ? content_h - view_h : 0.0f;
 }
 
 void PlaylistPanel::load_playlists()

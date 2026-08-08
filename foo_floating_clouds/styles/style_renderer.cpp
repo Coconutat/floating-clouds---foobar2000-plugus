@@ -95,8 +95,12 @@ void StyleRenderer::draw_button_row(const CSize& size)
 
 void StyleRenderer::render_minimal(const CSize& size)
 {
+    // In DComp mode the surface card is inset by SHADOW_INSET (transparent
+    // margin around it); in the Hwnd fallback the card fills the window. Only
+    // shift the edge-touching draws when the card is inset.
+    const float inset = m_renderer->is_dcomp() ? (float)SHADOW_INSET : 0.0f;
     float pad = 8;
-    float avail_w = (float)size.cx - pad * 2;
+    float avail_w = (float)size.cx - (pad + inset) * 2;
     
     pfc::string8 display;
     if (m_window->is_playing()) {
@@ -105,12 +109,12 @@ void StyleRenderer::render_minimal(const CSize& size)
     display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
     
     pfc::stringcvt::string_wide_from_utf8 wdisplay(display);
-    m_renderer->draw_text(wdisplay, pad, 0, avail_w, (float)size.cy,
+    m_renderer->draw_text(wdisplay, pad + inset, inset, avail_w, (float)size.cy - inset * 2,
                           m_renderer->get_title_format(),
                           D2DRenderer::hex(md3::on_surface, 0.95f));
     
     float progress = m_window->get_display_progress();
-    m_renderer->draw_progress_bar(pad, (float)size.cy - 2, avail_w, 2, progress,
+    m_renderer->draw_progress_bar(pad + inset, (float)size.cy - inset - 2, avail_w, 2, progress,
                                   D2DRenderer::hex(md3::primary, 0.9f),
                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
 }

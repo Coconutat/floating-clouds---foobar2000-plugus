@@ -63,7 +63,11 @@ constexpr int32_t DEFAULT_LANGUAGE = 0; // 0 = English, 1 = Chinese
 // clicked. Click-through for non-interactive areas is done via WM_NCHITTEST
 // returning HTTRANSPARENT instead.
 constexpr DWORD FLOATING_WINDOW_STYLE = WS_POPUP;
-constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
+// Base extended style without a transparency model. The active present mode
+// (DirectComposition vs the uniform-alpha fallback) adds the matching bit at
+// runtime: WS_EX_NOREDIRECTIONBITMAP (DComp) or WS_EX_LAYERED (fallback) — the
+// two are mutually exclusive.
+constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 
 // Message constants
 constexpr UINT FC_WM_TRAY_NOTIFY = WM_APP + 1;
@@ -74,7 +78,10 @@ constexpr UINT FC_HOVER_TIMER = 2; // polling timer for button hover feedback (a
 constexpr int32_t WINDOW_MIN_WIDTH = 200;
 constexpr int32_t WINDOW_MIN_HEIGHT = 32;
 constexpr int32_t WINDOW_PADDING = 12;
-constexpr int32_t WINDOW_CORNER_RADIUS = 12;
+// Surface card corner radius (maps to md3::corner_large = 16) and the
+// transparent margin around the card that the elevation shadow draws into.
+constexpr int32_t WINDOW_CORNER_RADIUS = 16;
+constexpr int32_t SHADOW_INSET = 8;
 
 // Style sizing
 constexpr int32_t STYLE_FULL_HEIGHT = 140;
