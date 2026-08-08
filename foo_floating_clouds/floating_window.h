@@ -107,9 +107,17 @@ public:
     // Hovered / pressed control-button index (MD3 state feedback), -1 if none
     int get_hover_button() const { return m_hover_button; }
     int get_pressed_button() const { return m_pressed_button; }
+    // Eased MD3 state-layer alpha for a control button (0..pressed_state),
+    // animated by the frame loop (plan 001).
+    float get_button_state_layer(int i) const {
+        return (i >= 0 && i < BUTTON_COUNT) ? m_button_state_layer[i] : 0.0f;
+    }
     // Fills `bars[count]` with a real-time FFT spectrum (0..1 per bar).
     // Returns false (bars zeroed) when no spectrum is available.
     bool get_visual_spectrum(float* bars, unsigned count);
+    // One-pole low-pass over `raw[count]` -> `out[count]` (Visualizer bar
+    // smoothing, plan 003). Uses persistent per-bar state.
+    void smooth_spectrum(const float* raw, float* out, unsigned count);
     // Embedded lyrics: called when the tag is read/updated; parses LRC or plain text.
     void on_lyrics_update(const char* text);
     // Current synced lyric line for the LyricsLine style (nullptr when none).
@@ -120,6 +128,8 @@ private:
     LRESULT OnCreate(LPCREATESTRUCT cs);
     void OnDestroy();
     void OnPaint(CDCHandle dc);
+    // Render + present one frame immediately (used by OnPaint and the frame loop).
+    bool render_now();
     BOOL OnEraseBkgnd(CDCHandle dc);
     void OnSize(UINT nType, CSize size);
     LRESULT OnNcHitTest(CPoint point);
@@ -185,6 +195,9 @@ private:
     
     // Real-time spectrum stream (Visualizer style)
     service_ptr_t<visualisation_stream> m_vis_stream;
+    // Per-bar low-pass state for the Visualizer (plan 003)
+    float m_vis_smooth[32] = {};
+    double m_last_vis_tick = 0.0;
 
     // Playlist picker panel (button 5)
     std::unique_ptr<PlaylistPanel> m_playlist_panel;
@@ -199,6 +212,8 @@ private:
     
     // Animation
     float m_anim_opacity = 1.0f;
+    float m_anim_lift = 0.0f;          // vertical drift during show/hide (plan 004)
+    float m_button_state_layer[BUTTON_COUNT] = {}; // eased MD3 state-layer alpha (plan 001)
     bool m_animating = false;
     float m_display_progress = 0.0f;   // eased value shown to the user
     float m_target_progress = 0.0f;    // real playback progress target

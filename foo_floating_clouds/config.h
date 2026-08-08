@@ -89,6 +89,7 @@ constexpr int32_t STYLE_FULL_HEIGHT = 140;
 // Fixed widths per style: the window never resizes with text length.
 // Long titles scroll (marquee) inside their fixed width instead.
 constexpr int32_t STYLE_MINIMAL_WIDTH = 360;
+constexpr int32_t STYLE_MINIMAL_HEIGHT = 48;
 constexpr int32_t STYLE_FULL_WIDTH = 400;
 constexpr int32_t COVER_ART_SIZE_FULL = 64;
 constexpr int32_t BUTTON_SIZE = 24;
@@ -103,9 +104,12 @@ inline int32_t button_row_count() { return BUTTON_COUNT; }
 inline int32_t button_row_width()  { return BUTTON_COUNT * BUTTON_SIZE + (BUTTON_COUNT - 1) * BUTTON_SPACING; }
 inline int32_t button_row_start_x(int32_t window_cx) { return (window_cx - button_row_width()) / 2; }
 inline int32_t button_row_y(int32_t window_cy)       { return window_cy - WINDOW_PADDING - BUTTON_SIZE; }
-// Y of a progress bar that sits just above the button row.
-inline int32_t progress_above_buttons_y(int32_t window_cy) {
-    return window_cy - WINDOW_PADDING - BUTTON_SIZE - WINDOW_PADDING - PROGRESS_BAR_HEIGHT - 4;
+
+// Time-based exponential approach (frame-rate independent). After ~3*tau
+// seconds the value is ~95% toward target. tau in seconds.
+inline float approach_dt(float current, float target, float tau, float dt) {
+    const float k = 1.0f - expf(-dt / tau);
+    return current + (target - current) * k;
 }
 
 // Which styles render a control-button row (tiny / special-purpose styles omit it).

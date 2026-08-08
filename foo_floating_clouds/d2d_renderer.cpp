@@ -6,6 +6,15 @@
 // D2DRenderer implementation
 // ============================================================================
 
+namespace {
+// Corner radius for album art, scaled to the display size (plan 011 follow-up):
+// size/16 is just enough rounding to see on small thumbnails; large hero art
+// keeps the surface card radius (16).
+float art_corner_radius(float size) {
+    return (std::min)((float)WINDOW_CORNER_RADIUS, (std::max)(4.0f, size * 0.003125f)); // 1/32
+}
+} // namespace
+
 D2DRenderer::D2DRenderer()
 {
 }
@@ -549,7 +558,51 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
                             if (SUCCEEDED(converter->Initialize(src, GUID_WICPixelFormat32bppPBGRA,
                                     WICBitmapDitherTypeNone, NULL, 0.0,
                                     WICBitmapPaletteTypeMedianCut))) {
-                                m_render_target->CreateBitmapFromWicBitmap(converter, NULL, &m_album_art_bitmap);
+                                // Round the corners once at build time (plan 011): copy to a
+                                // CPU buffer, apply a rounded-rect alpha mask (radius = the
+                                // surface card radius), then upload. Baked into the cached
+                                // bitmap -> zero per-frame cost, safe for the ULW software
+                                // render target.
+                                UINT aw = 0, ah = 0;
+                                converter->GetSize(&aw, &ah);
+                                std::vector<uint32_t> buf((size_t)aw * ah);
+                                const float r = art_corner_radius((float)((std::min)(aw, ah)));
+                                const UINT rr = (UINT)(r * 2.0f);
+                                if (aw >= rr && ah >= rr &&
+                                    SUCCEEDED(converter->CopyPixels(NULL, aw * 4, aw * ah * 4,
+                                        (BYTE*)buf.data()))) {
+                                    const float r = (float)WINDOW_CORNER_RADIUS;
+                                    const float rx = (float)(aw - 1);
+                                    const float ry = (float)(ah - 1);
+                                    for (UINT py = 0; py < ah; py++) {
+                                        const float fpy = (float)py;
+                                        for (UINT px = 0; px < aw; px++) {
+                                            const float fpx = (float)px;
+                                            const float qx = fpx - (std::min)((std::max)(fpx, r), rx - r);
+                                            const float qy = fpy - (std::min)((std::max)(fpy, r), ry - r);
+                                            const float d = sqrtf(qx * qx + qy * qy) - r; // <0 inside
+                                            const float cov = (std::max)(0.0f, (std::min)(1.0f, 0.5f - d));
+                                            // PBGRA is PREMULTIPLIED: scaling only the alpha byte while
+                                            // leaving RGB would wash the edge pixels into a faded corner.
+                                            // Scale all four bytes so the silhouette is truly cut.
+                                            const uint32_t cov255 = (uint32_t)(cov * 255.0f + 0.5f);
+                                            uint32_t& p = buf[(size_t)py * aw + px];
+                                            uint8_t* pxb = (uint8_t*)&p;
+                                            pxb[0] = (uint8_t)((pxb[0] * cov255) / 255);
+                                            pxb[1] = (uint8_t)((pxb[1] * cov255) / 255);
+                                            pxb[2] = (uint8_t)((pxb[2] * cov255) / 255);
+                                            pxb[3] = (uint8_t)((pxb[3] * cov255) / 255);
+                                        }
+                                    }
+                                    m_render_target->CreateBitmap(
+                                        D2D1::SizeU(aw, ah), buf.data(), aw * 4,
+                                        D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                                                                 D2D1_ALPHA_MODE_PREMULTIPLIED)),
+                                        &m_album_art_bitmap);
+                                } else {
+                                    // Too small to mask (or copy failed): keep the plain bitmap.
+                                    m_render_target->CreateBitmapFromWicBitmap(converter, NULL, &m_album_art_bitmap);
+                                }
                             }
                             converter->Release();
                         }
@@ -573,39 +626,48 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
         // Draw placeholder (music note icon as simple colored rect)
         m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 0.9f));
         m_render_target->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(x, y, x + size, y + size), 4, 4), m_brush);
+            D2D1::RoundedRect(D2D1::RectF(x, y, x + size, y + size),
+                              art_corner_radius(size), art_corner_radius(size)), m_brush);
     }
 }
 
 void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_text,
-                               bool is_active, const D2D1_COLOR_F& color, int state)
+                               bool is_active, const D2D1_COLOR_F& color, int state, float state_alpha)
 {
+    const float cx = x + size / 2.0f;
+    const float cy = y + size / 2.0f;
+    const float radius = size / 2.0f;
+
+    // Press feedback (plan 001): shrink toward the button center, driven by the
+    // eased pressed-state layer so the scale animates with the state layer.
+    const bool pressed = (state >= 2);
+    const float scale = pressed ? 1.0f - 0.03f * (state_alpha / md3::pressed_state) : 1.0f;
+    const float rr = radius * scale;
+
     // Circle background (MD3 icon-button tonal fill)
     D2D1_COLOR_F bg_color = is_active ? 
         D2DRenderer::hex(md3::primary, 0.20f) : 
         D2DRenderer::hex(md3::on_surface_variant, 0.12f);
     
     m_brush->SetColor(bg_color);
-    float radius = size / 2;
     m_render_target->FillEllipse(
-        D2D1::Ellipse(D2D1::Point2F(x + radius, y + radius), radius, radius), m_brush);
+        D2D1::Ellipse(D2D1::Point2F(cx, cy), rr, rr), m_brush);
 
-    // MD3 state layer: hover 8% / pressed 12% on-surface overlay.
-    if (state > 0) {
-        float layer_a = (state >= 2) ? md3::pressed_state : md3::hover_state;
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, layer_a));
+    // MD3 state layer: hover 8% / pressed 12% on-surface overlay, eased.
+    if (state_alpha > 0.001f) {
+        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, state_alpha));
         m_render_target->FillEllipse(
-            D2D1::Ellipse(D2D1::Point2F(x + radius, y + radius), radius, radius), m_brush);
+            D2D1::Ellipse(D2D1::Point2F(cx, cy), rr, rr), m_brush);
     }
     
-    // Icon text (simple Unicode symbols or just text)
+    // Icon text (simple Unicode symbols or just text), scaled with the button
     if (icon_text && wcslen(icon_text) > 0) {
         m_brush->SetColor(color);
         
         // Use default format for icons
         auto format = get_small_format();
         if (format) {
-            D2D1_RECT_F text_rect = D2D1::RectF(x, y, x + size, y + size);
+            D2D1_RECT_F text_rect = D2D1::RectF(cx - rr, cy - rr, cx + rr, cy + rr);
             m_render_target->DrawText(icon_text, (UINT32)wcslen(icon_text), 
                                        format, text_rect, m_brush,
                                        D2D1_DRAW_TEXT_OPTIONS_NONE);
