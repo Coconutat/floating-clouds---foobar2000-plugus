@@ -31,13 +31,18 @@ void StyleRenderer::render(FloatingStyle style, const CSize& window_size)
 void StyleRenderer::render_full(const CSize& size)
 {
     float pad = (float)WINDOW_PADDING;
+    // Content sits inside the rounded card, which is inset by SHADOW_INSET in
+    // ULW mode. Offset the info block by that inset so the cover breathes from
+    // the card edge instead of hugging (and poking past) its rounded corner.
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
+    const float opad = pad + inset;
     float art_size = (float)COVER_ART_SIZE_FULL;
-    float avail_w = (float)size.cx - pad * 3 - art_size;
-    float y = pad;
+    float avail_w = (float)size.cx - pad * 3 - art_size - inset;
+    float y = opad;
     
-    m_renderer->draw_album_art(pad, pad, art_size, m_window->get_album_art());
+    m_renderer->draw_album_art(opad, opad, art_size, m_window->get_album_art());
     
-    float text_x = pad + art_size + pad;
+    float text_x = opad + art_size + pad;
     
     pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
     m_renderer->draw_text(wtitle, text_x, y, avail_w, 20,
@@ -52,7 +57,9 @@ void StyleRenderer::render_full(const CSize& size)
     y += 20;
     
     float progress = m_window->get_display_progress();
-    float pb_y = (float)progress_above_buttons_y(size.cy);
+    // Progress bar groups with the track info (MD3 media layout, plan 09): just
+    // below the artist line (`y` is the render cursor after the artist).
+    float pb_y = y + 4.0f;
     m_renderer->draw_progress_bar(text_x, pb_y, avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
                                   D2DRenderer::hex(md3::primary, 0.9f),
                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
@@ -79,6 +86,8 @@ void StyleRenderer::draw_button_row(const CSize& size)
         // MD3 state: pressed > hover > normal.
         int state = (m_window->get_pressed_button() == i) ? 2
                   : (m_window->get_hover_button() == i)  ? 1 : 0;
+        // Eased MD3 state-layer opacity (plan 001), animated by the frame loop.
+        float state_alpha = m_window->get_button_state_layer(i);
 
         // Icon color: playing play/pause -> primary; muted volume -> error.
         D2D1_COLOR_F icon_color = D2DRenderer::hex(md3::on_surface_variant, 0.95f);
@@ -89,7 +98,7 @@ void StyleRenderer::draw_button_row(const CSize& size)
         }
 
         m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, icons[i], active[i],
-                                icon_color, state);
+                                icon_color, state, state_alpha);
     }
 }
 
@@ -109,12 +118,21 @@ void StyleRenderer::render_minimal(const CSize& size)
     display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
     
     pfc::stringcvt::string_wide_from_utf8 wdisplay(display);
-    m_renderer->draw_text(wdisplay, pad + inset, inset, avail_w, (float)size.cy - inset * 2,
+    // Card-relative rhythm (plan 08): the card spans [inset, size.cy - inset].
+    // The 4px (MD3 track-height) progress bar sits 2px above the card bottom;
+    // the text line is vertically centered in the space above it.
+    const float card_top = inset;
+    const float card_bottom = (float)size.cy - inset;
+    const float bar_h = (float)PROGRESS_BAR_HEIGHT;
+    const float bar_y = card_bottom - bar_h - 2.0f;
+    const float text_h = 20.0f;
+    const float text_y = card_top + ((bar_y - 4.0f - card_top) - text_h) / 2.0f;
+    m_renderer->draw_text(wdisplay, pad + inset, text_y, avail_w, text_h,
                           m_renderer->get_title_format(),
                           D2DRenderer::hex(md3::on_surface, 0.95f));
     
     float progress = m_window->get_display_progress();
-    m_renderer->draw_progress_bar(pad + inset, (float)size.cy - inset - 2, avail_w, 2, progress,
+    m_renderer->draw_progress_bar(pad + inset, bar_y, avail_w, bar_h, progress,
                                   D2DRenderer::hex(md3::primary, 0.9f),
                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
 }
@@ -122,11 +140,13 @@ void StyleRenderer::render_minimal(const CSize& size)
 void StyleRenderer::render_album_focus(const CSize& size)
 {
     float pad = (float)WINDOW_PADDING;
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
+    const float opad = pad + inset;
     float avail_w = (float)size.cx - pad * 2;
     
     float art_size = (std::min)(avail_w - pad * 2, (float)size.cy - 120);
     float art_x = ((float)size.cx - art_size) / 2;
-    float art_y = pad;
+    float art_y = opad;
     
     m_renderer->draw_album_art(art_x, art_y, art_size, m_window->get_album_art());
     
@@ -143,8 +163,9 @@ void StyleRenderer::render_album_focus(const CSize& size)
                           m_renderer->get_artist_format(),
                           D2DRenderer::hex(md3::on_surface_variant, 0.85f));
     
+    // Progress bar groups with the track info (plan 09): just below the artist.
     float progress = m_window->get_display_progress();
-    float pb_y = (float)progress_above_buttons_y(size.cy);
+    float pb_y = info_y2 + 18 + 6;
     m_renderer->draw_progress_bar(art_x, pb_y, art_size, (float)PROGRESS_BAR_HEIGHT, progress,
                                   D2DRenderer::hex(md3::primary, 0.9f),
                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
@@ -188,8 +209,12 @@ void StyleRenderer::render_visualizer(const CSize& size)
 {
     float pad = (float)WINDOW_PADDING;
     float avail_w = (float)size.cx - pad * 2;
-    // Bars fill the space above the caption; the caption sits above the button row.
-    float bar_area_h = (float)button_row_y(size.cy) - 8.0f - 16.0f - 8.0f;
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
+    // Bar area (plan 10): below the card's top edge (ULW) plus 8px pad, up to
+    // the caption — the tallest bars must not poke above the rounded card.
+    const float bar_area_bottom = (float)button_row_y(size.cy) - 8.0f - 16.0f - 8.0f;
+    const float bar_area_top = inset + 8.0f;
+    const float bar_area_h = bar_area_bottom - bar_area_top;
     const int bar_count = 32;
     float bar_w = (avail_w - (bar_count - 1)) / bar_count;
 
@@ -197,14 +222,18 @@ void StyleRenderer::render_visualizer(const CSize& size)
     // stopped or no spectrum is available yet.
     float bars[bar_count] = {};
     m_window->get_visual_spectrum(bars, bar_count);
+    // One-pole low-pass per bar (plan 003): raw FFT values jitter; smoothed
+    // bars glide instead of jumping.
+    float smoothed[bar_count] = {};
+    m_window->smooth_spectrum(bars, smoothed, bar_count);
 
     for (int i = 0; i < bar_count; i++) {
-        float v = bars[i] * 1.8f; // boost for a livelier look
+        float v = smoothed[i] * 1.8f; // boost for a livelier look
         if (v < 0.0f) v = 0.0f;
         else if (v > 1.0f) v = 1.0f;
         float h = v * bar_area_h;
         float x = pad + i * (bar_w + 1);
-        float y = bar_area_h - h;
+        float y = bar_area_bottom - h;
 
         float intensity = (float)i / bar_count;
         // MD3 accent ramp: primary (lavender) -> tertiary (pink)
@@ -215,10 +244,10 @@ void StyleRenderer::render_visualizer(const CSize& size)
         float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
         m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
         m_renderer->get_render_target()->FillRectangle(
-            D2D1::RectF(x, y, x + bar_w, bar_area_h), m_renderer->get_brush());
+            D2D1::RectF(x, y, x + bar_w, bar_area_bottom), m_renderer->get_brush());
     }
     
-    float text_y = bar_area_h + 8;
+    float text_y = bar_area_bottom + 8;
     pfc::string8 display;
     display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
     pfc::stringcvt::string_wide_from_utf8 wdisplay(display);

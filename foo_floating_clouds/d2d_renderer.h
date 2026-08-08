@@ -67,8 +67,10 @@ public:
     void draw_album_art(float x, float y, float size, album_art_data_ptr art);
     
     // Draw a control button (circle with icon). state: 0 normal, 1 hover, 2 pressed.
+    // state_alpha is the eased MD3 state-layer opacity (0..pressed_state) that
+    // drives the hover/pressed transition and the press-scale (plan 001).
     void draw_button(float x, float y, float size, const wchar_t* icon_text,
-                     bool is_active, const D2D1_COLOR_F& color, int state = 0);
+                     bool is_active, const D2D1_COLOR_F& color, int state = 0, float state_alpha = 0.0f);
     
     // Draw a rounded progress ring
     void draw_progress_ring(float cx, float cy, float radius, float thickness,

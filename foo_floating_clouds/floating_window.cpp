@@ -136,13 +136,17 @@ void FloatingCloudsWindow::apply_preferences()
     }
 }
 
-void FloatingCloudsWindow::OnPaint(CDCHandle dc)
+bool FloatingCloudsWindow::render_now()
 {
-    CPaintDC paint_dc(m_hWnd);
-    
     if (!begin_draw()) {
-        FB2K_console_formatter() << "Floating Clouds: OnPaint begin_draw FAILED";
-        return;
+        FB2K_console_formatter() << "Floating Clouds: render_now begin_draw FAILED";
+        return false;
+    }
+
+    // Show/hide vertical drift (plan 004): translate the whole surface down
+    // while hiding (and up while showing) so the fade reads as a float.
+    if (m_anim_lift > 0.01f) {
+        m_render_target->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, m_anim_lift));
     }
     
     if (is_ulw()) {
@@ -165,6 +169,13 @@ void FloatingCloudsWindow::OnPaint(CDCHandle dc)
     renderer.render(m_current_style, size);
     
     end_draw();
+    return true;
+}
+
+void FloatingCloudsWindow::OnPaint(CDCHandle dc)
+{
+    CPaintDC paint_dc(m_hWnd);
+    render_now();
 }
 
 BOOL FloatingCloudsWindow::OnEraseBkgnd(CDCHandle dc)
@@ -207,6 +218,7 @@ void FloatingCloudsWindow::OnLButtonDown(UINT nFlags, CPoint point)
         int btn = hit_test_button(point);
         if (btn >= 0) {
             m_pressed_button = btn;
+            start_anim_timer(); // ease the pressed state layer in (plan 001)
             if (!m_hover_tracking) {
                 m_hover_tracking = true;
                 SetTimer(FC_HOVER_TIMER, 40, NULL);
@@ -220,6 +232,7 @@ void FloatingCloudsWindow::OnLButtonUp(UINT nFlags, CPoint point)
 {
     if (m_pressed_button != -1) {
         m_pressed_button = -1;
+        start_anim_timer(); // ease the pressed state layer out (plan 001)
         Invalidate();
     }
     
@@ -288,7 +301,7 @@ void FloatingCloudsWindow::OnMouseMove(UINT nFlags, CPoint point)
     if (style_has_buttons(m_current_style)) {
         int btn = hit_test_button(point);
         if (btn >= 0) {
-            if (btn != m_hover_button) { m_hover_button = btn; Invalidate(); }
+            if (btn != m_hover_button) { m_hover_button = btn; start_anim_timer(); Invalidate(); }
             if (!m_hover_tracking) {
                 m_hover_tracking = true;
                 SetTimer(FC_HOVER_TIMER, 40, NULL);
@@ -299,7 +312,7 @@ void FloatingCloudsWindow::OnMouseMove(UINT nFlags, CPoint point)
 
 LRESULT FloatingCloudsWindow::OnMouseLeave(UINT, WPARAM, LPARAM, BOOL& bHandled)
 {
-    if (m_hover_button != -1) { m_hover_button = -1; Invalidate(); }
+    if (m_hover_button != -1) { m_hover_button = -1; start_anim_timer(); Invalidate(); }
     if (m_hover_tracking) { KillTimer(FC_HOVER_TIMER); m_hover_tracking = false; }
     bHandled = TRUE;
     return 0;
@@ -325,6 +338,7 @@ void FloatingCloudsWindow::on_hover_tick()
     int btn = style_has_buttons(m_current_style) ? hit_test_button(sp) : -1;
     if (btn != m_hover_button) {
         m_hover_button = btn;
+        start_anim_timer(); // ease the hover state layer in/out (plan 001)
         Invalidate();
     }
 
@@ -466,35 +480,44 @@ void FloatingCloudsWindow::on_anim_tick()
 {
     if (!IsWindow()) { stop_anim_timer(); return; }
 
-    m_last_anim_tick = (double)GetTickCount64();
+    // Time-based easing (frame-rate independent, plan 002). dt is clamped so a
+    // stall (debugger, sleep, hotkey) doesn't cause a huge single-frame jump.
+    const double now = (double)GetTickCount64();
+    const float dt = (float)((now - m_last_anim_tick) / 1000.0);
+    m_last_anim_tick = now;
+    const float dtc = (dt < 0.0f) ? 0.0f : (dt > 0.10f ? 0.10f : dt);
     bool changed = false;
 
-    // Progress: exponential smoothing toward the target -> gradual fill.
-    const float k = 0.15f;
-    float d = m_target_progress - m_display_progress;
-    if (fabsf(d) > 0.0005f) {
-        m_display_progress += d * k;
-        if (fabsf(m_target_progress - m_display_progress) < 0.0005f)
-            m_display_progress = m_target_progress;
-        changed = true;
-    } else {
-        m_display_progress = m_target_progress;
-    }
+    // Progress: time-based ease toward the target (tau 0.10s preserves the old
+    // k=0.15/frame @60fps feel).
+    const float np = approach_dt(m_display_progress, m_target_progress, 0.10f, dtc);
+    if (fabsf(np - m_display_progress) > 0.0005f) changed = true;
+    m_display_progress = np;
 
-    // Opacity: ease toward 1 (visible) or 0 (hiding).
+    // Opacity: time-based ease toward 1 (visible) / 0 (hiding) (tau 0.085s).
     const float target_op = m_visible ? 1.0f : 0.0f;
-    float od = target_op - m_anim_opacity;
-    if (fabsf(od) > 0.001f) {
-        m_anim_opacity += od * 0.18f;
-        if (fabsf(target_op - m_anim_opacity) < 0.001f) m_anim_opacity = target_op;
-        changed = true;
-    } else {
-        m_anim_opacity = target_op;
+    const float no = approach_dt(m_anim_opacity, target_op, 0.085f, dtc);
+    if (fabsf(no - m_anim_opacity) > 0.001f) changed = true;
+    m_anim_opacity = no;
+
+    // Show/hide vertical drift (plan 004): 0 when visible, SHADOW_INSET when hiding.
+    const float lift_tgt = m_visible ? 0.0f : (float)SHADOW_INSET;
+    const float nl = approach_dt(m_anim_lift, lift_tgt, 0.12f, dtc);
+    if (fabsf(nl - m_anim_lift) > 0.01f) changed = true;
+    m_anim_lift = nl;
+
+    // Button MD3 state layers (plan 001): ease each toward its target.
+    for (int i = 0; i < BUTTON_COUNT; i++) {
+        const float tgt = (m_pressed_button == i) ? md3::pressed_state
+                        : (m_hover_button == i)  ? md3::hover_state : 0.0f;
+        const float nv = approach_dt(m_button_state_layer[i], tgt, 0.08f, dtc);
+        if (fabsf(nv - m_button_state_layer[i]) > 0.0005f) changed = true;
+        m_button_state_layer[i] = nv;
     }
 
     if (changed) {
-        update_layered_window();
-        Invalidate();
+        update_layered_window(); // applies opacity (ULW) / LWA (fallback)
+        render_now();            // render immediately (frame-loop paced, not WM_PAINT)
         return; // keep the frame loop for the next frame
     }
 
@@ -507,11 +530,11 @@ void FloatingCloudsWindow::on_anim_tick()
     }
     // Visualizer animates continuously: keep the frame loop alive.
     if (m_current_style == FloatingStyle::Visualizer) {
-        Invalidate();
+        render_now();
         return;
     }
     if (m_marquee_active) {
-        Invalidate(); // keep redrawing to advance the scrolling title
+        render_now(); // keep redrawing to advance the scrolling title
         return;       // keep the frame loop running
     }
     // During playback keep repainting continuously: the playback-time callback
@@ -519,7 +542,7 @@ void FloatingCloudsWindow::on_anim_tick()
     // then freeze — on the per-pixel-alpha ULW surface that low, uneven
     // refresh reads as flicker/strobe. (Visualizer does the same above.)
     if (m_playing && !m_paused) {
-        Invalidate();
+        render_now();
         return; // keep the frame loop running while playing
     }
     stop_anim_timer();
@@ -656,7 +679,7 @@ CSize FloatingCloudsWindow::calculate_size()
     // Long titles scroll (marquee) inside their fixed width instead.
     switch (m_current_style) {
         case FloatingStyle::Minimal:
-            return CSize(STYLE_MINIMAL_WIDTH, 32);
+            return CSize(STYLE_MINIMAL_WIDTH, STYLE_MINIMAL_HEIGHT);
         
         case FloatingStyle::Full:
             return CSize(STYLE_FULL_WIDTH, STYLE_FULL_HEIGHT);
@@ -722,6 +745,22 @@ bool FloatingCloudsWindow::get_visual_spectrum(float* bars, unsigned count)
         bars[b] = (float)m;
     }
     return true;
+}
+
+void FloatingCloudsWindow::smooth_spectrum(const float* raw, float* out, unsigned count)
+{
+    const double now = (double)GetTickCount64();
+    const float dt = (float)((now - m_last_vis_tick) / 1000.0);
+    m_last_vis_tick = now;
+    const float dtc = (dt < 0.0f) ? 0.0f : (dt > 0.25f ? 0.25f : dt);
+    const float k = 1.0f - expf(-dtc / 0.06f); // ~60ms time constant (plan 003)
+    for (unsigned i = 0; i < count && i < 32; i++) {
+        float v = raw[i];
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        m_vis_smooth[i] += (v - m_vis_smooth[i]) * k;
+        out[i] = m_vis_smooth[i];
+    }
 }
 
 void FloatingCloudsWindow::on_lyrics_update(const char* text)
@@ -864,9 +903,9 @@ void FloatingCloudsWindow::update_layered_window()
     if (op < 0 || op > 255) op = DEFAULT_OPACITY;
 
     if (is_ulw()) {
-        // Per-pixel alpha: opacity/fade folded into the DIB at present time.
+        // Per-pixel alpha: opacity/fade folded into the DIB at present time;
+        // callers repaint themselves (render_now / Invalidate).
         set_global_opacity((float)op / 255.0f * m_anim_opacity);
-        if (IsWindowVisible()) Invalidate();
     } else {
         // Uniform-alpha fallback.
         ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)(op * m_anim_opacity), LWA_ALPHA);
