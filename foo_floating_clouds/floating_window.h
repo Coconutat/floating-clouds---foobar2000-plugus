@@ -25,7 +25,7 @@ struct LyricLine {
 // forces full mouse pass-through); click-through comes from WM_NCHITTEST.
 class FloatingCloudsWindow :
     public CWindowImpl<FloatingCloudsWindow, CWindow,
-        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
+        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
     public D2DRenderer
 {
 public:

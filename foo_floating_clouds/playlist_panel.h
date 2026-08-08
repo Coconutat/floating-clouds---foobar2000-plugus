@@ -13,7 +13,7 @@
 
 class PlaylistPanel :
     public CWindowImpl<PlaylistPanel, CWindow,
-        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
+        CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
     public D2DRenderer
 {
 public:
@@ -73,6 +73,7 @@ private:
     bool hit_back(CPoint point) const;
     bool hit_close(CPoint point) const;
     float max_scroll() const;
+    int content_top() const;                    // y of the first list row (header bottom)
 
     // Data (view 0 = playlists, view 1 = tracks of m_sel_playlist)
     pfc::list_t<pfc::string8> m_playlists;

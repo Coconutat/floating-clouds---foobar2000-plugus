@@ -34,13 +34,20 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
         << " exstyle=0x" << GetWindowLong(GWL_EXSTYLE)
         << " visible=" << (IsWindowVisible() ? 1 : 0);
     
-    // Set layered window with transparency
-    SetWindowLong(GWL_EXSTYLE, FLOATING_WINDOW_EX_STYLE);
-    ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)DEFAULT_OPACITY, LWA_ALPHA);
-    
-    // Initialize D2D renderer
+    // Initialize D2D renderer first: it picks the present mode (DirectComposition
+    // on Win10/11, else the uniform-alpha Hwnd fallback).
     bool d2d_ok = D2DRenderer::initialize(m_hWnd);
-    FB2K_console_formatter() << "Floating Clouds: D2D initialize=" << (d2d_ok ? 1 : 0);
+    FB2K_console_formatter() << "Floating Clouds: D2D initialize=" << (d2d_ok ? 1 : 0)
+        << " mode=" << (is_dcomp() ? "DComp" : "Hwnd");
+    
+    // Apply the extended style matching the present mode. WS_EX_NOREDIRECTIONBITMAP
+    // and WS_EX_LAYERED are mutually exclusive, so exactly one is set.
+    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | (is_dcomp() ? WS_EX_NOREDIRECTIONBITMAP : WS_EX_LAYERED);
+    SetWindowLong(GWL_EXSTYLE, ex_style);
+    if (is_dcomp()) {
+        // Let DWM pick up the new ex-style and avoid a black first frame.
+        SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
     
     // Register hotkeys
     m_hotkeys->register_all(m_hWnd);
@@ -130,8 +137,19 @@ void FloatingCloudsWindow::OnPaint(CDCHandle dc)
         return;
     }
     
-    // Clear with semi-transparent background
-    clear_background(m_anim_opacity * 0.6f);
+    if (is_dcomp()) {
+        // Per-pixel alpha: clear transparent, then draw the rounded card + shadow.
+        clear_background(0.0f);
+        CRect rc;
+        GetClientRect(&rc);
+        D2D1_RECT_F card = D2D1::RectF((float)SHADOW_INSET, (float)SHADOW_INSET,
+                                       (float)rc.Width() - (float)SHADOW_INSET,
+                                       (float)rc.Height() - (float)SHADOW_INSET);
+        draw_surface_card(card, (float)WINDOW_CORNER_RADIUS);
+    } else {
+        // Uniform-alpha fallback: opaque surface (per-pixel alpha is ignored).
+        clear_background(m_anim_opacity * 0.6f);
+    }
     
     // Delegate to style renderer
     CSize size = calculate_size();
@@ -148,9 +166,7 @@ BOOL FloatingCloudsWindow::OnEraseBkgnd(CDCHandle dc)
 
 void FloatingCloudsWindow::OnSize(UINT nType, CSize size)
 {
-    if (m_render_target) {
-        m_render_target->Resize(D2D1::SizeU(size.cx, size.cy));
-    }
+    on_resize(size);
 }
 
 LRESULT FloatingCloudsWindow::OnNcHitTest(CPoint point)
@@ -825,7 +841,15 @@ void FloatingCloudsWindow::update_layered_window()
     cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
     int op = (int)cfg_opacity.get_value();
     if (op < 0 || op > 255) op = DEFAULT_OPACITY;
-    ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)(op * m_anim_opacity), LWA_ALPHA);
+
+    if (is_dcomp()) {
+        // GPU per-pixel alpha: opacity/fade applied to the composition visual.
+        set_global_opacity((float)op / 255.0f * m_anim_opacity);
+        if (IsWindowVisible()) Invalidate();
+    } else {
+        // Uniform-alpha fallback.
+        ::SetLayeredWindowAttributes(m_hWnd, 0, (BYTE)(op * m_anim_opacity), LWA_ALPHA);
+    }
 }
 
 int FloatingCloudsWindow::hit_test_button(CPoint point)

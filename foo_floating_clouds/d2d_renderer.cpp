@@ -1,5 +1,13 @@
 #include "stdafx.h"
 #include "d2d_renderer.h"
+#include "config.h"
+
+namespace {
+    // d2d1.lib does not export the built-in effect CLSIDs, so define the
+    // GaussianBlur GUID locally (value from d2d1effects.h).
+    const GUID s_clsid_d2d1_gaussian_blur = {0x1feb6d69, 0x2fe6, 0x4ac9,
+        {0x8c, 0x58, 0x1d, 0x7f, 0x93, 0xe7, 0xa6, 0xa5}};
+}
 
 // ============================================================================
 // D2DRenderer implementation
@@ -24,8 +32,8 @@ bool D2DRenderer::initialize(HWND hwnd)
     
     HRESULT hr;
     
-    // Create D2D factory
-    hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_d2d_factory);
+    // Create D2D 1.1 factory (also creates all 1.0-compatible objects).
+    hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, IID_PPV_ARGS(&m_d2d_factory));
     if (FAILED(hr)) { FB2K_console_formatter() << "Floating Clouds: D2D factory FAILED hr=0x" << pfc::format_hex(hr); return false; }
     
     // Create DWrite factory
@@ -38,7 +46,7 @@ bool D2DRenderer::initialize(HWND hwnd)
                            IID_IWICImagingFactory, (void**)&m_wic_factory);
     if (FAILED(hr)) { FB2K_console_formatter() << "Floating Clouds: WIC factory FAILED hr=0x" << pfc::format_hex(hr); return false; }
     
-    // Create render target
+    // Create the present target: DirectComposition first, Hwnd fallback second.
     bool ok = create_resources();
     if (!ok) console::print("Floating Clouds: render target creation FAILED");
     return ok;
@@ -46,7 +54,22 @@ bool D2DRenderer::initialize(HWND hwnd)
 
 void D2DRenderer::release_resources()
 {
-    if (m_render_target) { m_render_target->Release(); m_render_target = nullptr; }
+    // DComp / D3D11 stack
+    if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
+    if (m_shadow_key) { m_shadow_key->Release(); m_shadow_key = nullptr; }
+    if (m_shadow_ambient) { m_shadow_ambient->Release(); m_shadow_ambient = nullptr; }
+    if (m_shadow_source) { m_shadow_source->Release(); m_shadow_source = nullptr; }
+    if (m_surface) { m_surface->Release(); m_surface = nullptr; }
+    if (m_root_visual) { m_root_visual->Release(); m_root_visual = nullptr; }
+    if (m_dcomp_target) { m_dcomp_target->Release(); m_dcomp_target = nullptr; }
+    if (m_dcomp_device) { m_dcomp_device->Release(); m_dcomp_device = nullptr; }
+    if (m_dc) { m_dc->Release(); m_dc = nullptr; }
+    if (m_d2d_device) { m_d2d_device->Release(); m_d2d_device = nullptr; }
+    if (m_dxgi_device) { m_dxgi_device->Release(); m_dxgi_device = nullptr; }
+    if (m_d3d_device) { m_d3d_device->Release(); m_d3d_device = nullptr; }
+    if (m_hwnd_target) { m_hwnd_target->Release(); m_hwnd_target = nullptr; }
+    m_render_target = nullptr;
+    // Shared resources
     if (m_brush) { m_brush->Release(); m_brush = nullptr; }
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
@@ -54,27 +77,104 @@ void D2DRenderer::release_resources()
     if (m_rounded_rect_geo) { m_rounded_rect_geo->Release(); m_rounded_rect_geo = nullptr; }
     if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
+    m_mode = PresentMode::None;
 }
 
 bool D2DRenderer::create_resources()
 {
-    if (!m_d2d_factory) return false;
     if (m_render_target) return true;
-    
+
+    // Try the modern GPU path (DirectComposition + D2D 1.1 + D3D11) first.
+    if (create_dcomp_resources()) {
+        m_mode = PresentMode::DComp;
+        return true;
+    }
+
+    // Clean up any partial DComp objects before the fallback.
+    release_resources();
+
+    // Fall back to the uniform-alpha HwndRenderTarget path (square corners).
+    if (create_hwnd_resources()) {
+        m_mode = PresentMode::Hwnd;
+        FB2K_console_formatter() << "Floating Clouds: DirectComposition unavailable, using Hwnd fallback";
+        return true;
+    }
+    return false;
+}
+
+bool D2DRenderer::create_dcomp_resources()
+{
+    HRESULT hr;
+
+    // D3D11 device (hardware, then WARP for VMs / remote / fallback drivers).
+    hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                           D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                           D3D11_SDK_VERSION, &m_d3d_device, nullptr, nullptr);
+    if (FAILED(hr)) {
+        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+                               D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                               D3D11_SDK_VERSION, &m_d3d_device, nullptr, nullptr);
+    }
+    if (FAILED(hr)) { FB2K_console_formatter() << "Floating Clouds: D3D11 device FAILED hr=0x" << pfc::format_hex(hr); return false; }
+
+    if (FAILED(m_d3d_device->QueryInterface(IID_PPV_ARGS(&m_dxgi_device)))) return false;
+    if (FAILED(m_d2d_factory->CreateDevice(m_dxgi_device, &m_d2d_device))) return false;
+    if (FAILED(m_d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_dc))) return false;
+    if (FAILED(DCompositionCreateDevice2(m_dxgi_device, IID_PPV_ARGS(&m_dcomp_device)))) return false;
+
+    // Bind the DComp visual tree to this HWND. IDCompositionDesktopDevice owns
+    // CreateTargetForHwnd (IDCompositionDevice2 does not).
+    if (FAILED(m_dcomp_device->CreateTargetForHwnd(m_hwnd, TRUE, &m_dcomp_target))) return false;
+
+    // CreateVisual returns Visual2 (no SetOpacity); upgrade to Visual3 (Win10).
+    CComPtr<IDCompositionVisual2> v2;
+    if (FAILED(m_dcomp_device->CreateVisual(&v2))) return false;
+    if (FAILED(v2->QueryInterface(IID_PPV_ARGS(&m_root_visual)))) return false;
+    if (FAILED(m_dcomp_target->SetRoot(m_root_visual))) return false;
+
+    // Per-pixel alpha surface for the client area.
     CRect rc;
     ::GetClientRect(m_hwnd, &rc);
-    
+    m_surface_size.cx = (std::max)(1L, (long)rc.Width());
+    m_surface_size.cy = (std::max)(1L, (long)rc.Height());
+    if (FAILED(m_dcomp_device->CreateSurface((UINT)m_surface_size.cx, (UINT)m_surface_size.cy,
+                    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_surface))) return false;
+    if (FAILED(m_root_visual->SetContent(m_surface))) return false;
+    m_root_visual->SetOpacity(m_global_opacity);
+
+    m_render_target = m_dc;
+    if (!create_brush_and_stroke()) return false;
+    if (!create_shadow()) return false;
+    return true;
+}
+
+bool D2DRenderer::create_hwnd_resources()
+{
+    if (!m_d2d_factory) return false;
+
+    CRect rc;
+    ::GetClientRect(m_hwnd, &rc);
+
     HRESULT hr = m_d2d_factory->CreateHwndRenderTarget(
         D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)
         ),
-        D2D1::HwndRenderTargetProperties(m_hwnd, D2D1::SizeU(rc.Width(), rc.Height())),
-        &m_render_target
+        D2D1::HwndRenderTargetProperties(m_hwnd, D2D1::SizeU((UINT)(std::max)(1L, (long)rc.Width()),
+                                                             (UINT)(std::max)(1L, (long)rc.Height()))),
+        &m_hwnd_target
     );
     if (FAILED(hr)) return false;
-    
-    hr = m_render_target->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &m_brush);
+
+    m_render_target = m_hwnd_target;
+    return create_brush_and_stroke();
+}
+
+bool D2DRenderer::create_brush_and_stroke()
+{
+    if (!m_render_target) return false;
+
+    HRESULT hr = m_render_target->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &m_brush);
     if (FAILED(hr)) return false;
 
     D2D1_STROKE_STYLE_PROPERTIES stroke_props = {};
@@ -84,7 +184,46 @@ bool D2DRenderer::create_resources()
     stroke_props.lineJoin = D2D1_LINE_JOIN_ROUND;
     stroke_props.dashStyle = D2D1_DASH_STYLE_SOLID;
     hr = m_d2d_factory->CreateStrokeStyle(stroke_props, NULL, 0, &m_round_stroke);
+    return SUCCEEDED(hr);
+}
+
+bool D2DRenderer::create_shadow()
+{
+    if (!m_dc || !m_surface) return false;
+
+    const float r = (float)WINDOW_CORNER_RADIUS;
+    const float inset = (float)SHADOW_INSET;
+    const UINT w = (UINT)m_surface_size.cx;
+    const UINT h = (UINT)m_surface_size.cy;
+
+    // Source: full-window bitmap holding a low-alpha black rounded card.
+    HRESULT hr = m_dc->CreateBitmap(D2D1::SizeU(w, h), nullptr, 0,
+        D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+        &m_shadow_source);
     if (FAILED(hr)) return false;
+
+    m_dc->SetTarget(m_shadow_source);
+    m_dc->BeginDraw();
+    m_dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+    m_brush->SetColor(D2D1::ColorF(0, 0, 0, 0.32f));
+    m_dc->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(inset, inset, (float)w - inset, (float)h - inset), r, r),
+        m_brush);
+    m_dc->EndDraw();
+    m_dc->SetTarget(nullptr);
+
+    // Ambient layer: soft, no offset.
+    if (FAILED(m_dc->CreateEffect(s_clsid_d2d1_gaussian_blur, &m_shadow_ambient))) return false;
+    m_shadow_ambient->SetInput(0, m_shadow_source);
+    m_shadow_ambient->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 8.0f);
+    m_shadow_ambient->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED);
+
+    // Key layer: tighter, offset down when drawn.
+    if (FAILED(m_dc->CreateEffect(s_clsid_d2d1_gaussian_blur, &m_shadow_key))) return false;
+    m_shadow_key->SetInput(0, m_shadow_source);
+    m_shadow_key->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 5.0f);
+    m_shadow_key->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED);
 
     return true;
 }
@@ -94,28 +233,116 @@ bool D2DRenderer::begin_draw()
     if (!create_resources()) return false;
 
     m_marquee_active = false; // reset per frame
-    
-    m_render_target->BeginDraw();
-    m_render_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-    m_render_target->SetTransform(D2D1::Matrix3x2F::Identity());
+
+    if (m_mode == PresentMode::DComp) {
+        CComPtr<IDXGISurface> dxgi_surface;
+        POINT offset = {};
+        HRESULT hr = m_surface->BeginDraw(nullptr, IID_PPV_ARGS(&dxgi_surface), &offset);
+        if (FAILED(hr)) return false;
+        if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
+        hr = m_dc->CreateBitmapFromDxgiSurface(dxgi_surface,
+            D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+            &m_target_bitmap);
+        if (FAILED(hr)) { m_surface->EndDraw(); return false; }
+        m_dc->SetTarget(m_target_bitmap);
+        m_dc->BeginDraw();
+        m_dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        m_dc->SetTransform(D2D1::Matrix3x2F::Identity());
+    } else {
+        m_hwnd_target->BeginDraw();
+        m_hwnd_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        m_hwnd_target->SetTransform(D2D1::Matrix3x2F::Identity());
+    }
     
     return true;
 }
 
 void D2DRenderer::end_draw()
 {
-    if (m_render_target) {
-        HRESULT hr = m_render_target->EndDraw();
-        if (hr == D2DERR_RECREATE_TARGET) {
-            release_resources();
+    if (!m_render_target) return;
+
+    HRESULT hr = m_render_target->EndDraw();
+    if (hr == D2DERR_RECREATE_TARGET || hr == DXGI_ERROR_DEVICE_REMOVED) {
+        release_resources(); // rebuild the whole stack next frame
+        return;
+    }
+
+    if (m_mode == PresentMode::DComp) {
+        if (m_target_bitmap) {
+            m_dc->SetTarget(nullptr);
+            m_target_bitmap->Release();
+            m_target_bitmap = nullptr;
+        }
+        if (SUCCEEDED(hr)) {
+            hr = m_surface->EndDraw();
+            if (FAILED(hr)) { release_resources(); return; }
+            if (m_dcomp_device) {
+                hr = m_dcomp_device->Commit();
+                if (FAILED(hr)) release_resources();
+            }
         }
     }
 }
 
 void D2DRenderer::clear_background(float opacity)
 {
-    // MD3 dark surface-container tone (replaces the old pure-black HUD fill)
-    m_render_target->Clear(D2DRenderer::hex(md3::surface_container, opacity));
+    if (m_mode == PresentMode::DComp) {
+        // Per-pixel alpha: clear to fully transparent; the rounded card + shadow
+        // are drawn by draw_surface_card.
+        m_render_target->Clear(D2D1::ColorF(0, 0, 0, 0));
+    } else {
+        // Uniform-alpha fallback: per-pixel alpha is ignored, so paint the MD3
+        // surface-container tone here (LWA_ALPHA applies the window opacity).
+        m_render_target->Clear(D2DRenderer::hex(md3::surface_container, opacity));
+    }
+}
+
+void D2DRenderer::set_global_opacity(float opacity)
+{
+    m_global_opacity = opacity;
+    if (m_mode == PresentMode::DComp && m_root_visual) {
+        m_root_visual->SetOpacity(opacity);
+    }
+}
+
+void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
+{
+    if (m_mode == PresentMode::DComp) {
+        // Elevation shadow: ambient layer (no offset) then key layer (down ~3px).
+        if (m_shadow_ambient) {
+            m_dc->DrawImage(m_shadow_ambient, D2D1::Point2F(0, 0));
+        }
+        if (m_shadow_key) {
+            m_dc->DrawImage(m_shadow_key, D2D1::Point2F(0, 3.0f));
+        }
+        m_brush->SetColor(D2DRenderer::hex(md3::surface_container, 1.0f));
+        m_render_target->FillRoundedRectangle(
+            D2D1::RoundedRect(rect, radius, radius), m_brush);
+    }
+    // Hwnd fallback: clear_background already filled the opaque surface.
+}
+
+void D2DRenderer::on_resize(CSize size)
+{
+    if (m_mode == PresentMode::DComp) {
+        if (!m_dcomp_device) return;
+        m_surface_size.cx = (std::max)(1L, (long)size.cx);
+        m_surface_size.cy = (std::max)(1L, (long)size.cy);
+        if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
+        if (m_shadow_ambient) { m_shadow_ambient->Release(); m_shadow_ambient = nullptr; }
+        if (m_shadow_key) { m_shadow_key->Release(); m_shadow_key = nullptr; }
+        if (m_shadow_source) { m_shadow_source->Release(); m_shadow_source = nullptr; }
+        if (m_surface) { m_surface->Release(); m_surface = nullptr; }
+        if (SUCCEEDED(m_dcomp_device->CreateSurface((UINT)m_surface_size.cx, (UINT)m_surface_size.cy,
+                        DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_surface))) {
+            m_root_visual->SetContent(m_surface);
+        }
+        create_shadow();
+    } else if (m_hwnd_target) {
+        m_hwnd_target->Resize(D2D1::SizeU((UINT)(std::max)(1L, (long)size.cx),
+                                          (UINT)(std::max)(1L, (long)size.cy)));
+    }
 }
 
 void D2DRenderer::draw_rounded_rect(const D2D1_RECT_F& rect, float radius,
