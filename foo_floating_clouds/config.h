@@ -29,6 +29,9 @@ namespace cfg_guids {
 
     // Localization
     static const GUID language = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x16 } };
+
+    // Diagnostics (Preferences > Appearance > Debug logging)
+    static const GUID debug_logging = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x17 } };
 }
 
 // Style enum
@@ -63,10 +66,8 @@ constexpr int32_t DEFAULT_LANGUAGE = 0; // 0 = English, 1 = Chinese
 // clicked. Click-through for non-interactive areas is done via WM_NCHITTEST
 // returning HTTRANSPARENT instead.
 constexpr DWORD FLOATING_WINDOW_STYLE = WS_POPUP;
-// Base extended style without a transparency model. The active present mode
-// (DirectComposition vs the uniform-alpha fallback) adds the matching bit at
-// runtime: WS_EX_NOREDIRECTIONBITMAP (DComp) or WS_EX_LAYERED (fallback) — the
-// two are mutually exclusive.
+// Base extended style; both present modes add WS_EX_LAYERED at runtime (ULW
+// presents via UpdateLayeredWindow, the Hwnd fallback via LWA_ALPHA).
 constexpr DWORD FLOATING_WINDOW_EX_STYLE = WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 
 // Message constants

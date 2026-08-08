@@ -95,10 +95,10 @@ void StyleRenderer::draw_button_row(const CSize& size)
 
 void StyleRenderer::render_minimal(const CSize& size)
 {
-    // In DComp mode the surface card is inset by SHADOW_INSET (transparent
+    // In ULW mode the surface card is inset by SHADOW_INSET (transparent
     // margin around it); in the Hwnd fallback the card fills the window. Only
     // shift the edge-touching draws when the card is inset.
-    const float inset = m_renderer->is_dcomp() ? (float)SHADOW_INSET : 0.0f;
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
     float pad = 8;
     float avail_w = (float)size.cx - (pad + inset) * 2;
     

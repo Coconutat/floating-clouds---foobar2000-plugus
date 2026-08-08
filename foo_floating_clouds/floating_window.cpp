@@ -38,16 +38,15 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
     // on Win10/11, else the uniform-alpha Hwnd fallback).
     bool d2d_ok = D2DRenderer::initialize(m_hWnd);
     FB2K_console_formatter() << "Floating Clouds: D2D initialize=" << (d2d_ok ? 1 : 0)
-        << " mode=" << (is_dcomp() ? "DComp" : "Hwnd");
+        << " mode=" << (is_ulw() ? "ULW" : "Hwnd");
     
-    // Apply the extended style matching the present mode. WS_EX_NOREDIRECTIONBITMAP
-    // and WS_EX_LAYERED are mutually exclusive, so exactly one is set.
-    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | (is_dcomp() ? WS_EX_NOREDIRECTIONBITMAP : WS_EX_LAYERED);
+    // Both present modes use WS_EX_LAYERED (ULW presents via UpdateLayeredWindow,
+    // the Hwnd fallback via LWA_ALPHA).
+    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | WS_EX_LAYERED;
     SetWindowLong(GWL_EXSTYLE, ex_style);
-    if (is_dcomp()) {
-        // Let DWM pick up the new ex-style and avoid a black first frame.
-        SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-    }
+    SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    FB2K_console_formatter() << "Floating Clouds: exstyle=0x" << GetWindowLong(GWL_EXSTYLE)
+        << " mode=" << (is_ulw() ? "ULW" : "Hwnd");
     
     // Register hotkeys
     m_hotkeys->register_all(m_hWnd);
@@ -70,7 +69,14 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
     
     x = (int)cfg_x.get_value();
     y = (int)cfg_y.get_value();
-    m_current_style = static_cast<FloatingStyle>((int32_t)cfg_style.get_value());
+    // Migrate the saved style number ONCE at load (old 8-style enum -> new
+    // 6-style) and persist the migrated value, so apply_preferences must never
+    // re-migrate (re-migrating a new 0-5 value corrupts the style: 2->1, 3->0...).
+    {
+        int saved = (int)cfg_style.get_value();
+        m_current_style = static_cast<FloatingStyle>(migrate_style(saved));
+        if ((int)m_current_style != saved) cfg_style = (int)m_current_style;
+    }
     
     SetWindowPos(NULL, x, y, size.cx, size.cy, SWP_NOZORDER | SWP_SHOWWINDOW);
     
@@ -117,10 +123,12 @@ void FloatingCloudsWindow::apply_preferences()
     // Opacity
     s_instance->update_layered_window();
 
-    // Style: switch if changed, otherwise just repaint.
-    // Migrate the saved style number (old 8-style enum -> new 6-style enum).
+    // Style: switch if changed, otherwise just repaint. The config already
+    // holds the new 6-style enum (migrated once at load), so no re-migration.
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-    FloatingStyle st = static_cast<FloatingStyle>(migrate_style((int32_t)cfg_style.get_value()));
+    int v = (int)cfg_style.get_value();
+    FloatingStyle st = (v >= 0 && v < (int)FloatingStyle::Count)
+        ? static_cast<FloatingStyle>(v) : static_cast<FloatingStyle>(DEFAULT_STYLE);
     if (st != s_instance->m_current_style) {
         s_instance->set_style(st);
     } else {
@@ -137,7 +145,7 @@ void FloatingCloudsWindow::OnPaint(CDCHandle dc)
         return;
     }
     
-    if (is_dcomp()) {
+    if (is_ulw()) {
         // Per-pixel alpha: clear transparent, then draw the rounded card + shadow.
         clear_background(0.0f);
         CRect rc;
@@ -408,6 +416,7 @@ void FloatingCloudsWindow::show_with_animation()
     const bool was_hidden = !m_visible;
     m_visible = true;
     if (was_hidden) m_anim_opacity = 0.0f; // fade in from transparent
+    FB2K_console_formatter() << "Floating Clouds: show (was_hidden=" << (was_hidden ? 1 : 0) << ")";
     ShowWindow(SW_SHOW);
     SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
     update_layered_window();
@@ -418,6 +427,7 @@ void FloatingCloudsWindow::show_with_animation()
 void FloatingCloudsWindow::hide_with_animation()
 {
     m_visible = false;
+    FB2K_console_formatter() << "Floating Clouds: hide (opacity=" << (int)(m_anim_opacity * 255.0f) << ")";
     if (m_anim_opacity <= 0.001f) {
         ShowWindow(SW_HIDE);
         return;
@@ -491,6 +501,7 @@ void FloatingCloudsWindow::on_anim_tick()
     // Nothing is animating (progress/opacity settled).
     if (!m_visible) {
         ShowWindow(SW_HIDE); // fade-out finished
+        FB2K_console_formatter() << "Floating Clouds: SW_HIDE after fade-out";
         stop_anim_timer();
         return;
     }
@@ -502,6 +513,14 @@ void FloatingCloudsWindow::on_anim_tick()
     if (m_marquee_active) {
         Invalidate(); // keep redrawing to advance the scrolling title
         return;       // keep the frame loop running
+    }
+    // During playback keep repainting continuously: the playback-time callback
+    // only fires ~13/s, so content would otherwise update in short bursts and
+    // then freeze — on the per-pixel-alpha ULW surface that low, uneven
+    // refresh reads as flicker/strobe. (Visualizer does the same above.)
+    if (m_playing && !m_paused) {
+        Invalidate();
+        return; // keep the frame loop running while playing
     }
     stop_anim_timer();
 }
@@ -545,6 +564,7 @@ void FloatingCloudsWindow::on_playback_new_track(const char* title, const char* 
     m_album_art_dirty = true;
     m_playing = true;
     m_paused = false;
+    FB2K_console_formatter() << "Floating Clouds: new track (visible=" << (m_visible ? 1 : 0) << ")";
     
     // Get track length
     m_track_length = playback_control::get()->playback_get_length_ex();
@@ -581,6 +601,7 @@ void FloatingCloudsWindow::on_playback_stop()
     
     // Auto-hide if configured
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
+    FB2K_console_formatter() << "Floating Clouds: playback stop (auto_hide=" << (cfg_auto_hide.get() ? 1 : 0) << ")";
     if (cfg_auto_hide.get()) {
         hide_with_animation();
     }
@@ -842,8 +863,8 @@ void FloatingCloudsWindow::update_layered_window()
     int op = (int)cfg_opacity.get_value();
     if (op < 0 || op > 255) op = DEFAULT_OPACITY;
 
-    if (is_dcomp()) {
-        // GPU per-pixel alpha: opacity/fade applied to the composition visual.
+    if (is_ulw()) {
+        // Per-pixel alpha: opacity/fade folded into the DIB at present time.
         set_global_opacity((float)op / 255.0f * m_anim_opacity);
         if (IsWindowVisible()) Invalidate();
     } else {

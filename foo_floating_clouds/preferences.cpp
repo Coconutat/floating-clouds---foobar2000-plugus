@@ -165,6 +165,7 @@ public:
         MSG_WM_INITDIALOG(OnInitDialog)
         MSG_WM_HSCROLL(OnHScroll)
         COMMAND_HANDLER_EX(IDC_AUTO_HIDE, BN_CLICKED, OnAutoHideClicked)
+        COMMAND_HANDLER_EX(IDC_DEBUG_LOG, BN_CLICKED, OnDebugLogClicked)
         COMMAND_HANDLER_EX(IDC_DEFAULT_STYLE, CBN_SELCHANGE, OnStyleChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnLanguageChanged)
         MESSAGE_HANDLER(FC_WM_HOTKEY_CAPTURED, OnHotkeyCaptured)
@@ -174,6 +175,7 @@ private:
     BOOL OnInitDialog(CWindow, LPARAM);
     void OnHScroll(int nCode, int nPos, CScrollBar pScrollBar);
     void OnAutoHideClicked(UINT, int, CWindow);
+    void OnDebugLogClicked(UINT, int, CWindow);
     void OnStyleChanged(UINT, int, CWindow);
     void OnLanguageChanged(UINT, int, CWindow);
     void ReloadLocalizedStrings();
@@ -209,6 +211,10 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
 
     // Auto-hide checkbox
     Button_SetCheck(GetDlgItem(IDC_AUTO_HIDE), cfg_auto_hide.get() ? BST_CHECKED : BST_UNCHECKED);
+
+    // Debug logging checkbox
+    cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
+    Button_SetCheck(GetDlgItem(IDC_DEBUG_LOG), cfg_debug.get() ? BST_CHECKED : BST_UNCHECKED);
 
     // Style combo (localized names)
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
@@ -247,6 +253,13 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
 
     m_initialized = true;
     return FALSE;
+}
+
+void CMyPreferences::OnDebugLogClicked(UINT, int, CWindow)
+{
+    cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
+    cfg_debug = (Button_GetCheck(GetDlgItem(IDC_DEBUG_LOG)) == BST_CHECKED);
+    FB2K_console_formatter() << "Floating Clouds: debug logging " << (cfg_debug.get() ? "ON" : "OFF");
 }
 
 void CMyPreferences::OnHScroll(int nCode, int nPos, CScrollBar pScrollBar)

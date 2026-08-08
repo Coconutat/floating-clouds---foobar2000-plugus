@@ -2,13 +2,6 @@
 #include "d2d_renderer.h"
 #include "config.h"
 
-namespace {
-    // d2d1.lib does not export the built-in effect CLSIDs, so define the
-    // GaussianBlur GUID locally (value from d2d1effects.h).
-    const GUID s_clsid_d2d1_gaussian_blur = {0x1feb6d69, 0x2fe6, 0x4ac9,
-        {0x8c, 0x58, 0x1d, 0x7f, 0x93, 0xe7, 0xa6, 0xa5}};
-}
-
 // ============================================================================
 // D2DRenderer implementation
 // ============================================================================
@@ -46,7 +39,8 @@ bool D2DRenderer::initialize(HWND hwnd)
                            IID_IWICImagingFactory, (void**)&m_wic_factory);
     if (FAILED(hr)) { FB2K_console_formatter() << "Floating Clouds: WIC factory FAILED hr=0x" << pfc::format_hex(hr); return false; }
     
-    // Create the present target: DirectComposition first, Hwnd fallback second.
+    // Create the present target: UpdateLayeredWindow (per-pixel alpha) first,
+    // Hwnd fallback second.
     bool ok = create_resources();
     if (!ok) console::print("Floating Clouds: render target creation FAILED");
     return ok;
@@ -54,19 +48,13 @@ bool D2DRenderer::initialize(HWND hwnd)
 
 void D2DRenderer::release_resources()
 {
-    // DComp / D3D11 stack
-    if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
-    if (m_shadow_key) { m_shadow_key->Release(); m_shadow_key = nullptr; }
-    if (m_shadow_ambient) { m_shadow_ambient->Release(); m_shadow_ambient = nullptr; }
-    if (m_shadow_source) { m_shadow_source->Release(); m_shadow_source = nullptr; }
-    if (m_surface) { m_surface->Release(); m_surface = nullptr; }
-    if (m_root_visual) { m_root_visual->Release(); m_root_visual = nullptr; }
-    if (m_dcomp_target) { m_dcomp_target->Release(); m_dcomp_target = nullptr; }
-    if (m_dcomp_device) { m_dcomp_device->Release(); m_dcomp_device = nullptr; }
-    if (m_dc) { m_dc->Release(); m_dc = nullptr; }
-    if (m_d2d_device) { m_d2d_device->Release(); m_d2d_device = nullptr; }
-    if (m_dxgi_device) { m_dxgi_device->Release(); m_dxgi_device = nullptr; }
-    if (m_d3d_device) { m_d3d_device->Release(); m_d3d_device = nullptr; }
+    // ULW per-pixel-alpha path
+    if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
+    if (m_ulw_target) { m_ulw_target->Release(); m_ulw_target = nullptr; }
+    if (m_dib) { DeleteObject(m_dib); m_dib = nullptr; }
+    if (m_mem_dc) { DeleteDC(m_mem_dc); m_mem_dc = nullptr; }
+    m_dib_bits = nullptr;
+    // Hwnd fallback target
     if (m_hwnd_target) { m_hwnd_target->Release(); m_hwnd_target = nullptr; }
     m_render_target = nullptr;
     // Shared resources
@@ -78,73 +66,70 @@ void D2DRenderer::release_resources()
     if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
     m_mode = PresentMode::None;
+    m_rebuilds++;
+    FB2K_console_formatter() << "Floating Clouds: present resources released (rebuild #" << (int)m_rebuilds << ")";
 }
 
 bool D2DRenderer::create_resources()
 {
     if (m_render_target) return true;
 
-    // Try the modern GPU path (DirectComposition + D2D 1.1 + D3D11) first.
-    if (create_dcomp_resources()) {
-        m_mode = PresentMode::DComp;
+    // Primary: UpdateLayeredWindow per-pixel alpha (driver-agnostic; AMD
+    // DirectComposition per-pixel surfaces are known to flicker).
+    if (create_ulw_resources()) {
+        m_mode = PresentMode::ULW;
         return true;
     }
 
-    // Clean up any partial DComp objects before the fallback.
+    // Clean up any partial ULW objects before the fallback.
     release_resources();
 
-    // Fall back to the uniform-alpha HwndRenderTarget path (square corners).
+    // Fallback: uniform-alpha HwndRenderTarget (square corners).
     if (create_hwnd_resources()) {
         m_mode = PresentMode::Hwnd;
-        FB2K_console_formatter() << "Floating Clouds: DirectComposition unavailable, using Hwnd fallback";
+        FB2K_console_formatter() << "Floating Clouds: ULW unavailable, using Hwnd fallback";
         return true;
     }
     return false;
 }
 
-bool D2DRenderer::create_dcomp_resources()
+bool D2DRenderer::create_ulw_resources()
 {
-    HRESULT hr;
+    if (!m_d2d_factory) return false;
 
-    // D3D11 device (hardware, then WARP for VMs / remote / fallback drivers).
-    hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                           D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
-                           D3D11_SDK_VERSION, &m_d3d_device, nullptr, nullptr);
-    if (FAILED(hr)) {
-        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
-                               D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
-                               D3D11_SDK_VERSION, &m_d3d_device, nullptr, nullptr);
-    }
-    if (FAILED(hr)) { FB2K_console_formatter() << "Floating Clouds: D3D11 device FAILED hr=0x" << pfc::format_hex(hr); return false; }
-
-    if (FAILED(m_d3d_device->QueryInterface(IID_PPV_ARGS(&m_dxgi_device)))) return false;
-    if (FAILED(m_d2d_factory->CreateDevice(m_dxgi_device, &m_d2d_device))) return false;
-    if (FAILED(m_d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_dc))) return false;
-    if (FAILED(DCompositionCreateDevice2(m_dxgi_device, IID_PPV_ARGS(&m_dcomp_device)))) return false;
-
-    // Bind the DComp visual tree to this HWND. IDCompositionDesktopDevice owns
-    // CreateTargetForHwnd (IDCompositionDevice2 does not).
-    if (FAILED(m_dcomp_device->CreateTargetForHwnd(m_hwnd, TRUE, &m_dcomp_target))) return false;
-
-    // CreateVisual returns Visual2 (no SetOpacity); upgrade to Visual3 (Win10).
-    CComPtr<IDCompositionVisual2> v2;
-    if (FAILED(m_dcomp_device->CreateVisual(&v2))) return false;
-    if (FAILED(v2->QueryInterface(IID_PPV_ARGS(&m_root_visual)))) return false;
-    if (FAILED(m_dcomp_target->SetRoot(m_root_visual))) return false;
-
-    // Per-pixel alpha surface for the client area.
     CRect rc;
     ::GetClientRect(m_hwnd, &rc);
-    m_surface_size.cx = (std::max)(1L, (long)rc.Width());
-    m_surface_size.cy = (std::max)(1L, (long)rc.Height());
-    if (FAILED(m_dcomp_device->CreateSurface((UINT)m_surface_size.cx, (UINT)m_surface_size.cy,
-                    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_surface))) return false;
-    if (FAILED(m_root_visual->SetContent(m_surface))) return false;
-    m_root_visual->SetOpacity(m_global_opacity);
+    const int w = (std::max)(1L, (long)rc.Width());
+    const int h = (std::max)(1L, (long)rc.Height());
+    m_dib_size.cx = w;
+    m_dib_size.cy = h;
+    m_dib_rect = CRect(0, 0, w, h);
 
-    m_render_target = m_dc;
+    // 32-bpp top-down DIB (premultiplied alpha for UpdateLayeredWindow).
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h; // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    m_mem_dc = CreateCompatibleDC(NULL);
+    if (!m_mem_dc) return false;
+    m_dib = CreateDIBSection(m_mem_dc, &bi, DIB_RGB_COLORS, &m_dib_bits, NULL, 0);
+    if (!m_dib) return false;
+    SelectObject(m_mem_dc, m_dib);
+
+    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    HRESULT hr = m_d2d_factory->CreateDCRenderTarget(&props, &m_ulw_target);
+    if (FAILED(hr)) return false;
+
+    m_render_target = m_ulw_target;
     if (!create_brush_and_stroke()) return false;
     if (!create_shadow()) return false;
+    FB2K_console_formatter() << "Floating Clouds: ULW DIB " << w << "x" << h;
     return true;
 }
 
@@ -189,43 +174,76 @@ bool D2DRenderer::create_brush_and_stroke()
 
 bool D2DRenderer::create_shadow()
 {
-    if (!m_dc || !m_surface) return false;
+    if (!m_ulw_target || !m_dib_bits) return false;
+
+    const int w = m_dib_size.cx;
+    const int h = m_dib_size.cy;
+    if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
 
     const float r = (float)WINDOW_CORNER_RADIUS;
-    const float inset = (float)SHADOW_INSET;
-    const UINT w = (UINT)m_surface_size.cx;
-    const UINT h = (UINT)m_surface_size.cy;
+    const int inset = SHADOW_INSET;
+    const int x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
 
-    // Source: full-window bitmap holding a low-alpha black rounded card.
-    HRESULT hr = m_dc->CreateBitmap(D2D1::SizeU(w, h), nullptr, 0,
-        D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
-        &m_shadow_source);
-    if (FAILED(hr)) return false;
+    // Rasterize the rounded-card alpha into a CPU buffer.
+    std::vector<uint8_t> a((size_t)w * h, 0);
+    for (int y = y0; y < y1; y++) {
+        for (int x = x0; x < x1; x++) {
+            int dx = (std::max)(x0 - x, (std::max)(x - x1, 0));
+            int dy = (std::max)(y0 - y, (std::max)(y - y1, 0));
+            float d = (float)std::sqrt((double)(dx * dx + dy * dy));
+            if (d <= r) a[(size_t)y * w + x] = 255;
+        }
+    }
 
-    m_dc->SetTarget(m_shadow_source);
-    m_dc->BeginDraw();
-    m_dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-    m_brush->SetColor(D2D1::ColorF(0, 0, 0, 0.32f));
-    m_dc->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(inset, inset, (float)w - inset, (float)h - inset), r, r),
-        m_brush);
-    m_dc->EndDraw();
-    m_dc->SetTarget(nullptr);
+    // Separable box blur (3 passes, radius 5) for a soft shadow.
+    std::vector<uint8_t> tmp((size_t)w * h), tmp2((size_t)w * h);
+    auto blur_h = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
+        for (int y = 0; y < h; y++) {
+            long acc = 0;
+            const size_t row = (size_t)y * w;
+            for (int x = -rad; x <= rad; x++) {
+                int xi = (std::max)(0, (std::min)(w - 1, x));
+                acc += src[row + xi];
+            }
+            for (int x = 0; x < w; x++) {
+                dst[row + x] = (uint8_t)(acc / (2 * rad + 1));
+                int xi1 = (std::max)(0, (std::min)(w - 1, x - rad));
+                int xi2 = (std::max)(0, (std::min)(w - 1, x + rad + 1));
+                acc += src[row + xi2] - src[row + xi1];
+            }
+        }
+    };
+    auto blur_v = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
+        for (int x = 0; x < w; x++) {
+            long acc = 0;
+            for (int y = -rad; y <= rad; y++) {
+                int yi = (std::max)(0, (std::min)(h - 1, y));
+                acc += src[(size_t)yi * w + x];
+            }
+            for (int y = 0; y < h; y++) {
+                dst[(size_t)y * w + x] = (uint8_t)(acc / (2 * rad + 1));
+                int yi1 = (std::max)(0, (std::min)(h - 1, y - rad));
+                int yi2 = (std::max)(0, (std::min)(h - 1, y + rad + 1));
+                acc += src[(size_t)yi2 * w + x] - src[(size_t)yi1 * w + x];
+            }
+        }
+    };
+    for (int pass = 0; pass < 3; pass++) {
+        blur_h(a, tmp, 5);
+        blur_v(tmp, tmp2, 5);
+        a.swap(tmp2);
+    }
 
-    // Ambient layer: soft, no offset.
-    if (FAILED(m_dc->CreateEffect(s_clsid_d2d1_gaussian_blur, &m_shadow_ambient))) return false;
-    m_shadow_ambient->SetInput(0, m_shadow_source);
-    m_shadow_ambient->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 8.0f);
-    m_shadow_ambient->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED);
-
-    // Key layer: tighter, offset down when drawn.
-    if (FAILED(m_dc->CreateEffect(s_clsid_d2d1_gaussian_blur, &m_shadow_key))) return false;
-    m_shadow_key->SetInput(0, m_shadow_source);
-    m_shadow_key->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 5.0f);
-    m_shadow_key->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED);
-
-    return true;
+    // Upload as a premultiplied black bitmap (RGB=0, A = blurred alpha * 0.4).
+    std::vector<uint32_t> px((size_t)w * h);
+    for (size_t i = 0; i < (size_t)w * h; i++) {
+        px[i] = (uint32_t)(a[i] * 0.40f) << 24; // B8G8R8A8: alpha in the high byte
+    }
+    HRESULT hr = m_ulw_target->CreateBitmap(D2D1::SizeU((UINT)w, (UINT)h), px.data(),
+        (UINT)w * 4,
+        D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+        &m_shadow_bitmap);
+    return SUCCEEDED(hr);
 }
 
 bool D2DRenderer::begin_draw()
@@ -234,21 +252,13 @@ bool D2DRenderer::begin_draw()
 
     m_marquee_active = false; // reset per frame
 
-    if (m_mode == PresentMode::DComp) {
-        CComPtr<IDXGISurface> dxgi_surface;
-        POINT offset = {};
-        HRESULT hr = m_surface->BeginDraw(nullptr, IID_PPV_ARGS(&dxgi_surface), &offset);
-        if (FAILED(hr)) return false;
-        if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
-        hr = m_dc->CreateBitmapFromDxgiSurface(dxgi_surface,
-            D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
-            &m_target_bitmap);
-        if (FAILED(hr)) { m_surface->EndDraw(); return false; }
-        m_dc->SetTarget(m_target_bitmap);
-        m_dc->BeginDraw();
-        m_dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        m_dc->SetTransform(D2D1::Matrix3x2F::Identity());
+    if (m_mode == PresentMode::ULW) {
+        if (!m_ulw_target || !m_mem_dc) return false;
+        HRESULT hr = m_ulw_target->BindDC(m_mem_dc, &m_dib_rect);
+        if (FAILED(hr)) { m_fail_begin++; return false; }
+        m_ulw_target->BeginDraw();
+        m_ulw_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        m_ulw_target->SetTransform(D2D1::Matrix3x2F::Identity());
     } else {
         m_hwnd_target->BeginDraw();
         m_hwnd_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -262,32 +272,46 @@ void D2DRenderer::end_draw()
 {
     if (!m_render_target) return;
 
+    const double t_frame0 = (double)GetTickCount64();
     HRESULT hr = m_render_target->EndDraw();
-    if (hr == D2DERR_RECREATE_TARGET || hr == DXGI_ERROR_DEVICE_REMOVED) {
-        release_resources(); // rebuild the whole stack next frame
-        return;
-    }
+    const double t_render = (double)GetTickCount64();
+    m_frames++;
 
-    if (m_mode == PresentMode::DComp) {
-        if (m_target_bitmap) {
-            m_dc->SetTarget(nullptr);
-            m_target_bitmap->Release();
-            m_target_bitmap = nullptr;
-        }
-        if (SUCCEEDED(hr)) {
-            hr = m_surface->EndDraw();
-            if (FAILED(hr)) { release_resources(); return; }
-            if (m_dcomp_device) {
-                hr = m_dcomp_device->Commit();
-                if (FAILED(hr)) release_resources();
+    if (m_mode == PresentMode::ULW) {
+        // Fold the global opacity into the premultiplied DIB pixels (scale all
+        // four bytes), so fading never touches DWM per-pixel composition.
+        if (m_dib_bits && m_global_opacity < 1.0f) {
+            const uint32_t n = (uint32_t)((size_t)m_dib_size.cx * (size_t)m_dib_size.cy);
+            const uint32_t o = (uint32_t)(m_global_opacity * 255.0f + 0.5f);
+            uint8_t* p = (uint8_t*)m_dib_bits;
+            for (uint32_t i = 0; i < n; i++, p += 4) {
+                p[0] = (uint8_t)((p[0] * o) / 255);
+                p[1] = (uint8_t)((p[1] * o) / 255);
+                p[2] = (uint8_t)((p[2] * o) / 255);
+                p[3] = (uint8_t)((p[3] * o) / 255);
             }
         }
+        if (SUCCEEDED(hr) && m_mem_dc) {
+            POINT pt_src = { 0, 0 };
+            SIZE size = m_dib_size;
+            BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+            ::UpdateLayeredWindow(m_hwnd, NULL, NULL, &size, m_mem_dc, &pt_src, 0, &blend, ULW_ALPHA);
+        }
+    } else if (hr == D2DERR_RECREATE_TARGET) {
+        release_resources();
     }
+
+    const double t_total = (double)GetTickCount64();
+    if (debug_enabled() && (t_total - t_frame0) > 25.0) {
+        FB2K_console_formatter() << "Floating Clouds: frame " << (int)(t_total - t_frame0) << "ms (render " << (int)(t_render - t_frame0) << ")";
+    }
+
+    log_present_summary();
 }
 
 void D2DRenderer::clear_background(float opacity)
 {
-    if (m_mode == PresentMode::DComp) {
+    if (m_mode == PresentMode::ULW) {
         // Per-pixel alpha: clear to fully transparent; the rounded card + shadow
         // are drawn by draw_surface_card.
         m_render_target->Clear(D2D1::ColorF(0, 0, 0, 0));
@@ -300,21 +324,45 @@ void D2DRenderer::clear_background(float opacity)
 
 void D2DRenderer::set_global_opacity(float opacity)
 {
+    // ULW applies the opacity at present time (per-pixel multiply in end_draw).
     m_global_opacity = opacity;
-    if (m_mode == PresentMode::DComp && m_root_visual) {
-        m_root_visual->SetOpacity(opacity);
+}
+
+bool D2DRenderer::debug_enabled()
+{
+    cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
+    return cfg_debug.get();
+}
+
+void D2DRenderer::log_present_summary()
+{
+    if (!debug_enabled()) {
+        m_frames = m_fail_begin = m_fail_commit = m_fail_surface = 0;
+        m_report_t = 0.0;
+        return;
+    }
+    const double now = (double)GetTickCount64();
+    if (m_report_t == 0.0) { m_report_t = now; return; }
+    if (now - m_report_t >= 1000.0) {
+        FB2K_console_formatter() << "Floating Clouds: present frames=" << (int)m_frames
+            << " beginFail=" << (int)m_fail_begin
+            << " srfFail=" << (int)m_fail_surface
+            << " commitFail=" << (int)m_fail_commit
+            << " rebuilds=" << (int)m_rebuilds
+            << " mode=" << (m_mode == PresentMode::ULW ? "ULW" : (m_mode == PresentMode::Hwnd ? "Hwnd" : "None"));
+        m_report_t = now;
+        m_frames = m_fail_begin = m_fail_commit = m_fail_surface = 0;
     }
 }
 
 void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
 {
-    if (m_mode == PresentMode::DComp) {
-        // Elevation shadow: ambient layer (no offset) then key layer (down ~3px).
-        if (m_shadow_ambient) {
-            m_dc->DrawImage(m_shadow_ambient, D2D1::Point2F(0, 0));
-        }
-        if (m_shadow_key) {
-            m_dc->DrawImage(m_shadow_key, D2D1::Point2F(0, 3.0f));
+    if (m_mode == PresentMode::ULW) {
+        // Elevation shadow: CPU box-blurred bitmap, drawn once per frame.
+        if (m_shadow_bitmap) {
+            m_render_target->DrawBitmap(m_shadow_bitmap,
+                D2D1::RectF(0, 0, (float)m_dib_size.cx, (float)m_dib_size.cy),
+                1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
         m_brush->SetColor(D2DRenderer::hex(md3::surface_container, 1.0f));
         m_render_target->FillRoundedRectangle(
@@ -325,19 +373,29 @@ void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
 
 void D2DRenderer::on_resize(CSize size)
 {
-    if (m_mode == PresentMode::DComp) {
-        if (!m_dcomp_device) return;
-        m_surface_size.cx = (std::max)(1L, (long)size.cx);
-        m_surface_size.cy = (std::max)(1L, (long)size.cy);
-        if (m_target_bitmap) { m_target_bitmap->Release(); m_target_bitmap = nullptr; }
-        if (m_shadow_ambient) { m_shadow_ambient->Release(); m_shadow_ambient = nullptr; }
-        if (m_shadow_key) { m_shadow_key->Release(); m_shadow_key = nullptr; }
-        if (m_shadow_source) { m_shadow_source->Release(); m_shadow_source = nullptr; }
-        if (m_surface) { m_surface->Release(); m_surface = nullptr; }
-        if (SUCCEEDED(m_dcomp_device->CreateSurface((UINT)m_surface_size.cx, (UINT)m_surface_size.cy,
-                        DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_surface))) {
-            m_root_visual->SetContent(m_surface);
+    if (m_mode == PresentMode::ULW) {
+        if (!m_mem_dc) return;
+        const int w = (std::max)(1L, (long)size.cx);
+        const int h = (std::max)(1L, (long)size.cy);
+        if (m_dib_size.cx == w && m_dib_size.cy == h) return;
+        m_dib_size.cx = w;
+        m_dib_size.cy = h;
+        m_dib_rect = CRect(0, 0, w, h);
+
+        BITMAPINFO bi = {};
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = w;
+        bi.bmiHeader.biHeight = -h;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        HBITMAP new_dib = CreateDIBSection(m_mem_dc, &bi, DIB_RGB_COLORS, &m_dib_bits, NULL, 0);
+        if (new_dib) {
+            HBITMAP old = (HBITMAP)SelectObject(m_mem_dc, new_dib);
+            if (old && old != new_dib) DeleteObject(old);
+            m_dib = new_dib;
         }
+        FB2K_console_formatter() << "Floating Clouds: ULW DIB resized to " << w << "x" << h;
         create_shadow();
     } else if (m_hwnd_target) {
         m_hwnd_target->Resize(D2D1::SizeU((UINT)(std::max)(1L, (long)size.cx),

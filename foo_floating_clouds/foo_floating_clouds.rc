@@ -48,11 +48,12 @@ BEGIN
     EDITTEXT        IDC_HOTKEY_STYLE,96,34,80,12,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "Click a box, then press the new key combo (needs Ctrl/Alt/Shift/Win)",IDC_LBL_HOTKEY_HINT,16,52,300,8
 
-    GROUPBOX        "Appearance",IDC_GRP_APPEARANCE,8,72,316,64
+    GROUPBOX        "Appearance",IDC_GRP_APPEARANCE,8,72,316,68
     LTEXT           "Opacity:",IDC_LBL_OPACITY,16,88,32,8
     CONTROL         "",IDC_OPACITY,"msctls_trackbar32",TBS_AUTOTICKS | WS_TABSTOP,56,84,100,20
     LTEXT           "220",IDC_OPACITY_LABEL,160,88,24,8
     CONTROL         "Auto-hide when stopped",IDC_AUTO_HIDE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,108,104,10
+    CONTROL         "Debug logging (console)",IDC_DEBUG_LOG,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,124,150,10
 
     GROUPBOX        "Style",IDC_GRP_STYLE,8,140,316,48
     LTEXT           "Default style:",IDC_LBL_DEFAULT_STYLE,16,156,56,8
