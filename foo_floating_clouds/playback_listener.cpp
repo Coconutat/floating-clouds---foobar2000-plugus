@@ -160,6 +160,14 @@ void PlaybackListener::update_track_info(metadb_handle_ptr p_track)
     // that runs after the window was destroyed cannot crash during shutdown.
     fb2k::inMainThread([window = m_window, title = pfc::string8(title), artist = pfc::string8(artist), album = pfc::string8(album), track = p_track]() {
         if (!FloatingCloudsWindow::is_current(window)) return;
+        // Drop stale callbacks: if playback has moved on or stopped by the time
+        // this queued callback runs, do NOT re-show an auto-hidden window with
+        // old track info (that causes visibility flicker on stop/track change).
+        {
+            auto pc = playback_control::get();
+            metadb_handle_ptr now;
+            if (!pc->get_now_playing(now) || now != track) return;
+        }
         // Need to load album art on main thread
         album_art_data_ptr art;
         try {

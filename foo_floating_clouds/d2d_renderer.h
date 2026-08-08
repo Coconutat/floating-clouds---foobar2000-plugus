@@ -24,23 +24,24 @@ public:
     bool begin_draw();
     void end_draw();
     
-    // Clear background. In DComp mode clears to fully transparent (the surface
+    // Clear background. In ULW mode clears to fully transparent (the surface
     // card + shadow come from draw_surface_card); in the Hwnd fallback it paints
     // the opaque surface color (per-pixel alpha is ignored there).
     void clear_background(float opacity = 0.6f);
 
-    // Present mode: DirectComposition (GPU per-pixel alpha) or the
+    // Present mode: UpdateLayeredWindow (per-pixel alpha, driver-agnostic — AMD
+    // DirectComposition per-pixel surfaces are known to flicker) or the
     // HwndRenderTarget + LWA_ALPHA uniform-alpha fallback.
-    enum class PresentMode { None, Hwnd, DComp };
+    enum class PresentMode { None, ULW, Hwnd };
 
     // Present mode
-    bool is_dcomp() const { return m_mode == PresentMode::DComp; }
+    bool is_ulw() const { return m_mode == PresentMode::ULW; }
     PresentMode get_present_mode() const { return m_mode; }
 
-    // Global window opacity (DComp: applied to the composition visual).
+    // Global window opacity (ULW: folded into per-pixel alpha at present time).
     void set_global_opacity(float opacity);
 
-    // Rounded surface card + elevation shadow (DComp) / opaque fill (fallback).
+    // Rounded surface card + elevation shadow (ULW) / opaque fill (fallback).
     void draw_surface_card(const D2D1_RECT_F& rect, float radius);
 
     // Recreate the present target for a new client size.
@@ -103,26 +104,22 @@ protected:
 
     PresentMode m_mode = PresentMode::None;
 
-    // Direct2D 1.1 / D3D11 / DirectComposition
+    // D2D / present targets
     ID2D1Factory1* m_d2d_factory = nullptr;
     ID2D1RenderTarget* m_render_target = nullptr;   // active drawing target
     ID2D1HwndRenderTarget* m_hwnd_target = nullptr; // Hwnd fallback target
-    ID2D1DeviceContext* m_dc = nullptr;             // DComp target
-    ID3D11Device* m_d3d_device = nullptr;
-    IDXGIDevice* m_dxgi_device = nullptr;
-    ID2D1Device* m_d2d_device = nullptr;
-    IDCompositionDesktopDevice* m_dcomp_device = nullptr;
-    IDCompositionTarget* m_dcomp_target = nullptr;
-    IDCompositionVisual3* m_root_visual = nullptr;
-    IDCompositionSurface* m_surface = nullptr;
-    ID2D1Bitmap1* m_target_bitmap = nullptr;        // per-frame DComp surface target
-    SIZE m_surface_size{};
+    ID2D1DCRenderTarget* m_ulw_target = nullptr;    // ULW target over the DIB
+
+    // ULW per-pixel-alpha path (DIB + UpdateLayeredWindow)
+    HDC m_mem_dc = nullptr;
+    HBITMAP m_dib = nullptr;
+    void* m_dib_bits = nullptr;
+    SIZE m_dib_size{};
+    RECT m_dib_rect{};
     float m_global_opacity = 1.0f;
 
-    // Surface-card shadow (DComp mode): blurred rounded-rect source + effects
-    ID2D1Bitmap1* m_shadow_source = nullptr;
-    ID2D1Effect* m_shadow_ambient = nullptr;
-    ID2D1Effect* m_shadow_key = nullptr;
+    // Surface-card shadow (ULW): CPU box-blurred rounded-rect bitmap
+    ID2D1Bitmap* m_shadow_bitmap = nullptr;
 
     ID2D1SolidColorBrush* m_brush = nullptr;
     
@@ -149,11 +146,21 @@ protected:
     // Set when the last frame scrolled any long text; keeps the frame loop alive
     bool m_marquee_active = false;
 
-    // Internal: build the DComp (GPU per-pixel alpha) or Hwnd (fallback) stack.
-    bool create_dcomp_resources();
+    // Internal: build the ULW (per-pixel alpha) or Hwnd (fallback) stack.
+    bool create_ulw_resources();
     bool create_hwnd_resources();
     bool create_brush_and_stroke();
     bool create_shadow();
+
+    // Present-loop diagnostics (debug logging): 1s summary of frame/failure counts.
+    bool debug_enabled();
+    void log_present_summary();
+    unsigned m_frames = 0;
+    unsigned m_fail_begin = 0;
+    unsigned m_fail_commit = 0;
+    unsigned m_fail_surface = 0;
+    unsigned m_rebuilds = 0;
+    double m_report_t = 0.0;
 
     // Internal: horizontally scroll `text` inside the box (used by draw_text)
     void draw_text_marquee(const wchar_t* text, float x, float y, float width, float height,

@@ -14,6 +14,7 @@
 #define IDC_HOTKEY_VISIBILITY           1006
 #define IDC_HOTKEY_STYLE                1007
 #define IDC_HOTKEY_RECORD               1008
+#define IDC_DEBUG_LOG                   1009
 
 // Localization
 #define IDC_LANGUAGE                    1100

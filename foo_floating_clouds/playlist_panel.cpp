@@ -26,8 +26,8 @@ PlaylistPanel::~PlaylistPanel()
 LRESULT PlaylistPanel::OnCreate(LPCREATESTRUCT cs)
 {
     D2DRenderer::initialize(m_hWnd);
-    // Match the window's extended style to the present mode.
-    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | (is_dcomp() ? WS_EX_NOREDIRECTIONBITMAP : WS_EX_LAYERED);
+    // Both present modes use WS_EX_LAYERED (ULW presents via UpdateLayeredWindow).
+    DWORD ex_style = FLOATING_WINDOW_EX_STYLE | WS_EX_LAYERED;
     SetWindowLong(GWL_EXSTYLE, ex_style);
     return 0;
 }
@@ -87,12 +87,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     CPaintDC paint_dc(m_hWnd);
     if (!begin_draw()) return;
 
-    const bool dcomp = is_dcomp();
-    const float inset = dcomp ? (float)SHADOW_INSET : 0.0f;
+    const bool ulw = is_ulw();
+    const float inset = ulw ? (float)SHADOW_INSET : 0.0f;
     const float hdr_y = inset;
     const float hdr_h = (float)HEADER_H;
 
-    if (dcomp) {
+    if (ulw) {
         // Per-pixel alpha: clear transparent, draw the rounded card + shadow.
         clear_background(0.0f);
         draw_surface_card(D2D1::RectF(inset, inset, (float)m_size.cx - inset, (float)m_size.cy - inset),
@@ -105,9 +105,9 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     const int rows = m_in_tracks ? (int)m_tracks.get_size() : (int)m_playlists.get_size();
     const float W = (float)m_size.cx;
 
-    // Header background (rounded top corners in DComp mode to follow the card)
+    // Header background (rounded top corners in ULW mode to follow the card)
     m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 1.0f));
-    if (dcomp) {
+    if (ulw) {
         m_render_target->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(inset, hdr_y, W - inset, hdr_y + hdr_h),
                               (float)WINDOW_CORNER_RADIUS, (float)WINDOW_CORNER_RADIUS), m_brush);
@@ -301,25 +301,25 @@ bool PlaylistPanel::in_header(CPoint point) const
 
 bool PlaylistPanel::hit_back(CPoint point) const
 {
-    const int lx = is_dcomp() ? SHADOW_INSET : 0;
+    const int lx = is_ulw() ? SHADOW_INSET : 0;
     return m_in_tracks && point.y < content_top() && point.x < lx + PAD + BTN_W;
 }
 
 bool PlaylistPanel::hit_close(CPoint point) const
 {
-    const int lx = is_dcomp() ? SHADOW_INSET : 0;
+    const int lx = is_ulw() ? SHADOW_INSET : 0;
     return point.y < content_top() && point.x > m_size.cx - lx - PAD - BTN_W;
 }
 
 int PlaylistPanel::content_top() const
 {
-    return (is_dcomp() ? SHADOW_INSET : 0) + HEADER_H;
+    return (is_ulw() ? SHADOW_INSET : 0) + HEADER_H;
 }
 
 float PlaylistPanel::max_scroll() const
 {
     const int rows = m_in_tracks ? (int)m_tracks.get_size() : (int)m_playlists.get_size();
-    const int inset = is_dcomp() ? SHADOW_INSET : 0;
+    const int inset = is_ulw() ? SHADOW_INSET : 0;
     const float view_h = (float)(m_size.cy - content_top() - inset);
     const float content_h = rows * (float)ROW_H;
     return content_h > view_h ? content_h - view_h : 0.0f;
