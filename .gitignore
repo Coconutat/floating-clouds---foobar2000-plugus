@@ -4,9 +4,9 @@
 # AI generated context (not project docs)
 CONTEXT.md
 CONTEXT-MAP.md
-/docs
-/design-plans
-/plans
+docs
+design-plans
+plans
 
 # VS Code
 .vscode/
