@@ -7,6 +7,16 @@ Windows Template Library: WTL10_01_Release
 
 一个 Foobar2000 插件，在桌面或游戏时在显示器某区域显示音乐播放器的悬浮 UI 叠加层。支持专辑封面、歌曲名称、歌手显示和简易播放控制。
 
+## 组件
+
+本仓库包含三个相互独立的 foobar2000 组件：
+
+| 组件 | DLL | 功能 |
+| --- | --- | --- |
+| **悬浮云 Floating Clouds** | `foo_floating_clouds.dll` | 本文档主体——悬浮播放信息叠加层（见下文） |
+| **歌单整理 Playlist Organizer** | `foo_playlist_organizer.dll` | 把活动歌单按专辑艺人整理为多个 A-Z 排序且锁定的艺人歌单 — [README](floating_clouds_organizing_playlists/README_CN.md) |
+| **Apple Music 标签 Apple Music Tags** | `foo_floating_clouds_tags.dll` | 按地区获取 Apple Music 标签并写入选中的曲目 — [README](floating_clouds_tags/README_CN.md) |
+
 ## 特性
 
 - **悬浮叠加** — 独立置顶窗口，始终保持在桌面或全屏游戏之上

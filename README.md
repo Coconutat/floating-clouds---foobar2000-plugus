@@ -7,6 +7,16 @@ Windows Template Library: WTL10_01_Release
 
 A foobar2000 component that displays a floating UI overlay on your desktop or over fullscreen games, showing now-playing information with album art, track title, artist, and playback controls.
 
+## Components
+
+This repository contains three independent foobar2000 components:
+
+| Component | DLL | What it does |
+| --- | --- | --- |
+| **Floating Clouds** | `foo_floating_clouds.dll` | This document's main subject — the floating now-playing overlay (see below) |
+| **Playlist Organizer** | `foo_playlist_organizer.dll` | Organizes an active playlist by album artist into A-Z-sorted, locked per-artist playlists — [README](floating_clouds_organizing_playlists/README.md) |
+| **Apple Music Tags** | `foo_floating_clouds_tags.dll` | Fetches per-region Apple Music tags and writes them to the selected tracks — [README](floating_clouds_tags/README.md) |
+
 ## Features
 
 - **Floating overlay** — independent topmost window above the desktop or fullscreen games
