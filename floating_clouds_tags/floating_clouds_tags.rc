@@ -1,0 +1,64 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "winres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+// Main dialog (modal): paste album URL, pick region, fetch, preview, apply.
+IDD_MAIN DIALOGEX 0, 0, 360, 292
+STYLE DS_SETFONT | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "Apple Music Tags"
+FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "Apple Music album",IDC_STATIC,8,8,344,60
+    LTEXT           "Album URL or ID:",IDC_STATIC,16,20,76,8
+    EDITTEXT        IDC_URL,96,18,160,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Fetch",IDC_FETCH,264,18,80,14
+    LTEXT           "Region (storefront language):",IDC_STATIC,16,38,108,8
+    COMBOBOX        IDC_REGION,128,36,132,120,CBS_DROPDOWNLIST | WS_TABSTOP
+    LTEXT           "",IDC_FETCH_HINT,16,54,324,10
+
+    GROUPBOX        "Parsed album",IDC_STATIC,8,72,344,56
+    LTEXT           "",IDC_PREVIEW,16,86,328,34
+
+    GROUPBOX        "Fields to update",IDC_STATIC,8,132,344,128
+    AUTOCHECKBOX    "Title",IDC_FIELD_TITLE,16,146,70,10
+    AUTOCHECKBOX    "Album",IDC_FIELD_ALBUM,16,160,70,10
+    AUTOCHECKBOX    "Artist",IDC_FIELD_ARTIST,16,174,70,10
+    AUTOCHECKBOX    "Album Artist",IDC_FIELD_ALBUM_ARTIST,16,188,90,10
+    AUTOCHECKBOX    "Genre",IDC_FIELD_GENRE,16,202,70,10
+    AUTOCHECKBOX    "Release date",IDC_FIELD_DATE,150,146,90,10
+    AUTOCHECKBOX    "Track #",IDC_FIELD_TRACK_NO,150,160,70,10
+    AUTOCHECKBOX    "Disc #",IDC_FIELD_DISC_NO,150,174,70,10
+    AUTOCHECKBOX    "Explicit",IDC_FIELD_EXPLICIT,150,188,70,10
+    AUTOCHECKBOX    "Overwrite existing tags",IDC_OVERWRITE,16,222,170,10
+    AUTOCHECKBOX    "Force write in selection order",IDC_FORCE_ORDER,16,236,220,10
+    AUTOCHECKBOX    "Convert to Simplified Chinese (HK->CN)",IDC_CONVERT_SC,16,250,240,10
+
+    DEFPUSHBUTTON    "Apply",IDC_APPLY,196,264,70,14
+    PUSHBUTTON       "Close",IDC_CLOSE,272,264,70,14
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Preferences dialog (child page).
+IDD_PREFERENCES DIALOGEX 0, 0, 240, 120
+STYLE DS_SETFONT | WS_CHILD
+FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "Defaults",IDC_GRP_DEFAULTS,8,8,224,60
+    LTEXT           "Default region:",IDC_LBL_DEFAULT_REGION,20,24,70,8
+    COMBOBOX        IDC_DEFAULT_REGION,96,22,120,120,CBS_DROPDOWNLIST | WS_TABSTOP
+    CONTROL         "Overwrite existing tags by default",IDC_OVERWRITE_DEFAULT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,20,42,190,10
+
+    GROUPBOX        "Language",IDC_GRP_LANGUAGE,8,72,224,44
+    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,20,88,60,8
+    COMBOBOX        IDC_LANGUAGE,88,86,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+END
+#endif
