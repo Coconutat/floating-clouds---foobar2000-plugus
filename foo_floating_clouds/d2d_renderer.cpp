@@ -71,6 +71,7 @@ void D2DRenderer::release_resources()
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
     if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
+    if (m_small_left_format) { m_small_left_format->Release(); m_small_left_format = nullptr; }
     if (m_rounded_rect_geo) { m_rounded_rect_geo->Release(); m_rounded_rect_geo = nullptr; }
     if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
@@ -773,4 +774,16 @@ IDWriteTextFormat* D2DRenderer::get_small_format()
         }
     }
     return m_small_format;
+}
+
+IDWriteTextFormat* D2DRenderer::get_small_left_format()
+{
+    if (!m_small_left_format) {
+        m_small_left_format = get_text_format(10.0f, DWRITE_FONT_WEIGHT_NORMAL);
+        if (m_small_left_format) {
+            m_small_left_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            m_small_left_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+    }
+    return m_small_left_format;
 }

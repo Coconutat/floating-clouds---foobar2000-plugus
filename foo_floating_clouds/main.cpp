@@ -18,7 +18,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD reason, LPVOID) {
 
 DECLARE_COMPONENT_VERSION(
     "Floating Clouds",
-    "0.1.8",
+    "0.2.0",
     "A floating UI overlay for foobar2000 - shows now playing info on desktop or over games. Plugus by Coconutat."
 );
 

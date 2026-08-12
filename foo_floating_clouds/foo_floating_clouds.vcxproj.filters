@@ -80,8 +80,14 @@
     <ClInclude Include="preferences.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="playlist_panel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pinyin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="styles\style_renderer.h">
-      <Filter>Header Files\Styles</Filter>
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

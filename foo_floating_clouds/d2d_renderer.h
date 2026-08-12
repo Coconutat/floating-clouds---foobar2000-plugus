@@ -100,6 +100,8 @@ public:
     IDWriteTextFormat* get_title_format();
     IDWriteTextFormat* get_artist_format();
     IDWriteTextFormat* get_small_format();
+    // Left-aligned small format (for text-entry boxes; get_small_format is centered).
+    IDWriteTextFormat* get_small_left_format();
 
 protected:
     HWND m_hwnd = nullptr;
@@ -130,6 +132,7 @@ protected:
     IDWriteTextFormat* m_title_format = nullptr;
     IDWriteTextFormat* m_artist_format = nullptr;
     IDWriteTextFormat* m_small_format = nullptr;
+    IDWriteTextFormat* m_small_left_format = nullptr;
     
     // WIC for album art decoding
     IWICImagingFactory* m_wic_factory = nullptr;

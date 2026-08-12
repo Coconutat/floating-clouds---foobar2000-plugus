@@ -210,6 +210,7 @@
     <ClInclude Include="tray_icon.h" />
     <ClInclude Include="preferences.h" />
     <ClInclude Include="playlist_panel.h" />
+    <ClInclude Include="pinyin.h" />
     <ClInclude Include="styles\style_renderer.h" />
   </ItemGroup>
   <ItemGroup>
