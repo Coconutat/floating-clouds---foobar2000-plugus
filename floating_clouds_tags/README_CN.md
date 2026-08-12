@@ -57,7 +57,9 @@
 
 ## 构建
 
-需要 Visual Studio 2019+（C++17）与 foobar2000 SDK（已包含）。
+需要 Visual Studio 2019+（C++17）与 foobar2000 SDK。
+
+foobar2000 SDK **不随本仓库分发**。请从 <https://www.foobar2000.org/SDK> 下载匹配版本（本仓库使用 2025-03-07），解压到仓库根目录的 `SDK/` 文件夹下——工程文件按 `..\SDK\...` 路径引用。使用时遵守其自身许可（`SDK/sdk-license.txt`）。
 
 ```
 cd floating_clouds_tags

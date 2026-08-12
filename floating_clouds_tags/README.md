@@ -57,7 +57,9 @@ The component uses the foobar2000 SDK `http_client` (implemented by the foobar20
 
 ## Build
 
-Requires Visual Studio 2019+ with C++17 support and the foobar2000 SDK (included).
+Requires Visual Studio 2019+ with C++17 support and the foobar2000 SDK.
+
+The foobar2000 SDK is **not bundled** with this repository. Download the matching SDK version (2025-03-07) from <https://www.foobar2000.org/SDK> and extract it into an `SDK/` folder at the repository root — the project files reference `..\SDK\...` paths. Use it under its own license (`SDK/sdk-license.txt`).
 
 ```
 cd floating_clouds_tags
