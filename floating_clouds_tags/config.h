@@ -48,12 +48,18 @@ enum TagField : uint32_t {
     FieldTrackNo     = 1u << 6,
     FieldDiscNo      = 1u << 7,
     FieldExplicit    = 1u << 8,
-    FieldAll         = FieldTitle | FieldAlbum | FieldArtist | FieldAlbumArtist | FieldGenre | FieldDate | FieldTrackNo | FieldDiscNo,
+    FieldComposer    = 1u << 9,
+    FieldCopyright   = 1u << 10,
+    FieldTotalTracks = 1u << 11,
+    FieldTotalDiscs  = 1u << 12,
+    FieldAll         = FieldTitle | FieldAlbum | FieldArtist | FieldAlbumArtist | FieldGenre | FieldDate | FieldTrackNo | FieldDiscNo
+                     | FieldComposer | FieldCopyright | FieldTotalTracks | FieldTotalDiscs,
 };
 
 // Which tags the tagger writes. Order matches the dialog checkboxes (see dialog.cpp).
 inline const uint32_t kWriteFields[] = {
     FieldTitle, FieldAlbum, FieldArtist, FieldAlbumArtist, FieldGenre,
     FieldDate, FieldTrackNo, FieldDiscNo, FieldExplicit,
+    FieldComposer, FieldCopyright, FieldTotalTracks, FieldTotalDiscs,
 };
 constexpr int32_t kWriteFieldCount = (int32_t)(sizeof(kWriteFields) / sizeof(kWriteFields[0]));

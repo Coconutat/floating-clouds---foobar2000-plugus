@@ -10,11 +10,12 @@ A foobar2000 component that fetches the official Apple Music album tags for the 
 
 - **Paste an Apple Music link (or album ID)** — the clipboard is read automatically when the dialog opens; the album ID and a default region are extracted from the URL
 - **Region = metadata language** — switch `CN / HK / TW / JP / US / GB / KR` to write tags in that storefront's language; the dropdown is never overridden by the pasted URL once you've touched it
-- **Field-level control** — pick which tags to write (title, album, artist, album artist, genre, release date, track #, disc #, explicit)
+- **Field-level control** — pick which tags to write (title, album, artist, album artist, genre, release date, track #, disc #, composer, copyright, total tracks, total discs, explicit)
 - **Fill-empty by default, overwrite on demand** — safe by default; a global "overwrite existing" toggle forces replacement
 - **Emergency "force write in selection order"** — for broken track numbers: writes the Nth selected track with the Nth Apple track's tags, top to bottom, ignoring track-number matching (implies overwrite)
 - **CN → HK fallback** — if an album doesn't exist on the CN storefront, automatically fetches the HK edition and converts it **character-by-character** to Simplified Chinese (clearly flagged in the UI; not official CN localization)
-- **Manual "Convert to Simplified Chinese"** — convert any fetched tags (e.g. HK traditional) to simplified on demand
+- **Generic "Convert to Simplified Chinese"** — one click converts any Traditional-source fetched tags (HK/TW etc.) to Simplified; the preview hints "Traditional Chinese detected" when applicable
+- **Local tag conversion** — a standalone "Convert Selected Tags to Simplified Chinese…" command converts your tracks' existing Traditional local tags to standard Simplified, with no Apple fetch involved (confirms first; reports "converted N / skipped M")
 - **Safe writes** — duration/audio properties are never touched; unmatched tracks are skipped and reported ("updated N / skipped M")
 - **EN / 中文 UI** + dark mode
 
@@ -36,13 +37,15 @@ A foobar2000 component that fetches the official Apple Music album tags for the 
 | Fields to update | per-field checkboxes (all checked except Explicit) |
 | Overwrite existing tags | off = fill empty only; on = force replace |
 | Force write in selection order | emergency: positional matching, implies overwrite |
-| Convert to Simplified Chinese | char-by-char 繁→简 of the fetched tags |
+| Convert to Simplified Chinese | generic toggle: char-by-char 繁→简 of any Traditional fetched tags; preview hints when detected |
 
-## CN → HK fallback & character conversion
+## Traditional→Simplified (independent) & CN → HK fallback
 
-- When region is **CN** and the album is not available there, the component **automatically retries the HK storefront** and converts every text field **character-by-character** from Traditional to Simplified Chinese.
+- **T2S conversion is an independent capability** (Windows NLS char-by-char mapping, not official localization): the dialog's "Convert to Simplified Chinese" toggle converts any **Traditional-source** fetched tags (HK/TW etc.); the preview hints "Traditional Chinese detected" when applicable.
+- **Local tag conversion**: the standalone "Convert Selected Tags to Simplified Chinese…" menu command converts your tracks' existing Traditional local tags to standard Simplified (all text fields; numeric/empty/already-Simplified skipped; confirms first; reports "converted N / skipped M").
+- **CN → HK fallback** (data-source behavior): when region is **CN** and the album is not available there, the component **automatically retries the HK storefront** and applies the T2S conversion. The real source storefront (hk) and whether T2S was applied are tracked separately.
 - This is **not official CN localization** — a popup and the preview explicitly say the tags were converted, because some titles or names may differ from mainland conventions.
-- Picking any non-CN region (HK/US/JP…) never triggers the fallback.
+- Picking any non-CN region (HK/US/JP…) never triggers the CN fallback.
 
 ## Proxy
 

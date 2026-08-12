@@ -27,6 +27,10 @@ const FieldControl kFieldControls[] = {
     { IDC_FIELD_TRACK_NO,    FieldTrackNo,     L"Track #",       L"曲目号" },
     { IDC_FIELD_DISC_NO,     FieldDiscNo,      L"Disc #",        L"碟号" },
     { IDC_FIELD_EXPLICIT,    FieldExplicit,    L"Explicit",      L"Explicit" },
+    { IDC_FIELD_COMPOSER,    FieldComposer,    L"Composer",      L"作曲" },
+    { IDC_FIELD_COPYRIGHT,   FieldCopyright,   L"Copyright",     L"版权" },
+    { IDC_FIELD_TOTAL_TRACKS, FieldTotalTracks, L"Total tracks", L"专辑曲目数" },
+    { IDC_FIELD_TOTAL_DISCS,  FieldTotalDiscs,  L"Total discs",  L"光盘数" },
 };
 
 const wchar_t* region_label(int idx)
@@ -90,7 +94,7 @@ void TagsDialog::ReloadStrings()
     SetDlgItemText(IDC_CLOSE, tr(L"Close", L"关闭"));
     SetDlgItemText(IDC_OVERWRITE, tr(L"Overwrite existing tags", L"覆写已有标签"));
     SetDlgItemText(IDC_FORCE_ORDER, tr(L"Force write in selection order", L"强制按选择顺序写入（紧急）"));
-    SetDlgItemText(IDC_CONVERT_SC, tr(L"Convert to Simplified Chinese (HK->CN)", L"转为简体中文（港→简）"));
+    SetDlgItemText(IDC_CONVERT_SC, tr(L"Convert to Simplified Chinese", L"转为简体中文"));
     for (const FieldControl& fc : kFieldControls) {
         SetDlgItemText(fc.id, tr(fc.en, fc.zh));
     }
@@ -197,14 +201,15 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
     m_album_original = album;
     m_album = album;
     m_has_album = true;
-    // The HK->CN toggle mirrors whether the auto CN-fallback already converted.
-    CheckDlgButton(IDC_CONVERT_SC, m_album.converted_from_hk ? BST_CHECKED : BST_UNCHECKED);
+    // The conversion toggle mirrors whether a T2S conversion already happened
+    // (the auto CN->HK fallback converts by default; unchecking restores the HK tags).
+    CheckDlgButton(IDC_CONVERT_SC, m_album.t2s_applied ? BST_CHECKED : BST_UNCHECKED);
     UpdatePreview();
     ApplyEnabled(true);
 
     // CN->HK fallback: tell the user plainly that these are char-by-char
     // converted (Traditional->Simplified) HK tags, not official CN metadata.
-    if (m_album.converted_from_hk) {
+    if (m_album.t2s_applied) {
         popup_message::g_show(
             tr8("This album is not available on the CN storefront. Tags were fetched "
                 "from the HK storefront and converted character-by-character from "
@@ -231,9 +236,12 @@ void TagsDialog::UpdatePreview()
     preview += L"    ";
     preview += tr(L"Region: ", L"地区：");
     preview += region_label(m_region_index);
-    if (m_album.converted_from_hk) {
-        preview += tr(L" (converted from HK Traditional Chinese, char-by-char, not official Simplified)",
-                      L"（港版繁体逐字转简，非官方简中）");
+    if (m_album.t2s_applied) {
+        preview += tr(L" (converted from Traditional Chinese, char-by-char, not official Simplified)",
+                      L"（繁体逐字转简，非官方简中）");
+    } else if (has_traditional(m_album)) {
+        preview += tr(L" (Traditional Chinese detected - check \"Convert to Simplified Chinese\" to convert)",
+                      L"（检测到繁体中文，可勾选“转为简体中文”进行转换）");
     }
     preview += L"\r\n";
     preview += tr(L"Tracks: ", L"曲目数：");
@@ -283,10 +291,10 @@ void TagsDialog::OnConvertToggled(UINT, int, CWindow)
 {
     if (!m_has_album) return;
     if (IsDlgButtonChecked(IDC_CONVERT_SC) == BST_CHECKED) {
-        // HK (or any traditional) tags -> Simplified Chinese, char-by-char.
+        // Any fetched (e.g. Traditional) tags -> Simplified Chinese, char-by-char.
         m_album = m_album_original;
         to_simplified(m_album);
-        m_album.converted_from_hk = true;
+        m_album.t2s_applied = true;
     } else {
         m_album = m_album_original; // restore the original fetched tags
     }

@@ -19,3 +19,9 @@ struct TagOptions {
 // dialog may appear) and shows a "written N / skipped M" popup on completion.
 void apply_tags(const metadb_handle_list& selected, const AppleAlbum& album,
                 const TagOptions& options, fb2k::hwnd_t parent);
+
+// Converts the selected tracks' EXISTING local tags from Traditional Chinese to
+// Simplified Chinese (char-by-char), in place, across every text meta field.
+// Main thread only. Starts metadb_io_v2::update_info_async and shows a
+// "converted N / skipped M" popup on completion.
+void convert_local_tags_to_simplified(const metadb_handle_list& selected, fb2k::hwnd_t parent);

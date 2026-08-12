@@ -78,15 +78,25 @@ Windows Template Library: WTL10_01_Release
 
 foobar2000 SDK **不随本仓库分发**。请从 <https://www.foobar2000.org/SDK> 下载匹配版本（本仓库使用 2025-03-07），解压到仓库根目录的 `SDK/` 文件夹下——工程文件按 `..\SDK\...` 路径引用。使用时遵守其自身许可（`SDK/sdk-license.txt`）。
 
+根目录 `build.ps1` 可一键构建全部三个组件（Floating Clouds / Playlist Organizer / Apple Music Tags），并统一收集打包文件到根目录 `dist/`。
+
 ```
 git clone <repo>
-powershell -ExecutionPolicy Bypass -File build.ps1            # Release / x64 -> foo_floating_clouds.dll
-powershell -ExecutionPolicy Bypass -File build.ps1 -Package   # 并打包 dist\foo_floating_clouds.fb2k-component
+powershell -ExecutionPolicy Bypass -File build.ps1            # 无参数 → 交互菜单（选语言/构建形式/组件）
+powershell -ExecutionPolicy Bypass -File build.ps1 -Package   # 构建全部 3 个并打包到根 dist\
+powershell -ExecutionPolicy Bypass -File build.ps1 -Language zh -Package   # 中文提示 + 打包
 ```
 
-`build.ps1` 还支持 `-Configuration Debug`、`-Platform Win32`、`-Clean`，以及
-`-Deploy -Foobar2000Dir "<foobar2000 根目录>"`。也可在 Visual Studio 中直接打开
-`foo_floating_clouds/foo_floating_clouds.vcxproj` 构建。
+常用参数（可组合、可脚本化/CI）：
+
+- `-Package` 打包 `.fb2k-component` 并收集到根 `dist/`
+- `-Deploy -Foobar2000Dir "<foobar2000 根目录>"` 部署 DLL 到 foobar2000
+- `-Component all|floating_clouds|organizing_playlists|tags` 选择组件（默认 all）
+- `-Language en|zh` 选择提示语言（默认 en）
+- `-Configuration Debug`、`-Platform Win32`、`-Clean`、`-CleanOnly`、`-Force`
+- `-Interactive` 强制进入交互菜单
+
+不带任何操作参数运行时进入交互菜单（先选提示语言，再选构建形式：仅 DLL / 打包 / 部署 / 清理 / 全部，最后选组件）。每个组件的构建输出会写入 `logs/<组件名>-<时间戳>.log`。也可在 Visual Studio 中直接打开 `foo_floating_clouds/foo_floating_clouds.vcxproj` 等工程构建。
 
 ## 许可证
 

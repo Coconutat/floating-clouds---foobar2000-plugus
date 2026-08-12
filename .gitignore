@@ -26,3 +26,4 @@ Win32/
 *.tlog
 ipch/
 .vs
+logs/

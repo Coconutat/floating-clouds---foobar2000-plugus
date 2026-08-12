@@ -78,15 +78,25 @@ Requires Visual Studio 2019+ with C++17 support and the foobar2000 SDK.
 
 The foobar2000 SDK is **not bundled** with this repository. Download the matching SDK version (2025-03-07) from <https://www.foobar2000.org/SDK> and extract it into an `SDK/` folder at the repository root — the project files reference `..\SDK\...` paths. Use it under its own license (`SDK/sdk-license.txt`).
 
+The root `build.ps1` builds all three components (Floating Clouds / Playlist Organizer / Apple Music Tags) in one run and collects the packages into the root `dist/` folder.
+
 ```
 git clone <repo>
-powershell -ExecutionPolicy Bypass -File build.ps1            # Release / x64 -> foo_floating_clouds.dll
-powershell -ExecutionPolicy Bypass -File build.ps1 -Package   # also package dist\foo_floating_clouds.fb2k-component
+powershell -ExecutionPolicy Bypass -File build.ps1            # no args -> interactive menu (language / form / component)
+powershell -ExecutionPolicy Bypass -File build.ps1 -Package   # build all 3 and package into root dist\
+powershell -ExecutionPolicy Bypass -File build.ps1 -Language zh -Package   # Chinese prompts + package
 ```
 
-`build.ps1` also supports `-Configuration Debug`, `-Platform Win32`, `-Clean`, and
-`-Deploy -Foobar2000Dir "<foobar2000 root>"`. Alternatively, open
-`foo_floating_clouds/foo_floating_clouds.vcxproj` in Visual Studio and build.
+Common parameters (combinable, scriptable / CI-friendly):
+
+- `-Package` package `.fb2k-component` and collect into root `dist/`
+- `-Deploy -Foobar2000Dir "<foobar2000 root>"` deploy the DLLs into foobar2000
+- `-Component all|floating_clouds|organizing_playlists|tags` pick components (default all)
+- `-Language en|zh` pick prompt language (default en)
+- `-Configuration Debug`, `-Platform Win32`, `-Clean`, `-CleanOnly`, `-Force`
+- `-Interactive` force the interactive menu
+
+Running with no action switches starts an interactive menu (pick prompt language, then build form: DLL only / package / deploy / clean / all, then components). Each component's build output is written to `logs/<component>-<timestamp>.log`. Alternatively open `foo_floating_clouds/foo_floating_clouds.vcxproj` (etc.) in Visual Studio and build.
 
 ## License
 

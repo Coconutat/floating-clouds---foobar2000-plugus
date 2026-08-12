@@ -87,7 +87,7 @@ public:
     }
 
 private:
-    static bool apply_fields(file_info& info, const AppleTrack& t, const TagOptions& opt)
+    bool apply_fields(file_info& info, const AppleTrack& t, const TagOptions& opt)
     {
         bool changed = false;
         apply_field(info, FieldTitle,       "TITLE",         t.title.get_ptr(),        opt, changed);
@@ -95,6 +95,7 @@ private:
         apply_field(info, FieldArtist,      "ARTIST",        t.artist.get_ptr(),       opt, changed);
         apply_field(info, FieldAlbumArtist, "ALBUM ARTIST",  t.album_artist.get_ptr(), opt, changed);
         apply_field(info, FieldGenre,       "GENRE",         t.genre.get_ptr(),        opt, changed);
+        apply_field(info, FieldComposer,    "COMPOSER",      t.composer.get_ptr(),     opt, changed);
 
         pfc::string8 date = normalize_date(t.release_date.get_ptr());
         apply_field(info, FieldDate,        "DATE",          date.get_ptr(),            opt, changed);
@@ -104,6 +105,18 @@ private:
 
         pfc::string8 disc_s = pfc::string8() << t.disc_number;
         apply_field(info, FieldDiscNo,      "DISCNUMBER",    disc_s.get_ptr(),          opt, changed);
+
+        // Album-level fields: the same value applies to every track of the album.
+        apply_field(info, FieldCopyright,   "COPYRIGHT",     m_album.copyright.get_ptr(), opt, changed);
+
+        if (m_album.track_count > 0) {
+            pfc::string8 total_s = pfc::string8() << m_album.track_count;
+            apply_field(info, FieldTotalTracks, "TOTALTRACKS", total_s.get_ptr(), opt, changed);
+        }
+        if (m_album.disc_count > 0) {
+            pfc::string8 discn_s = pfc::string8() << m_album.disc_count;
+            apply_field(info, FieldTotalDiscs, "TOTALDISCS", discn_s.get_ptr(), opt, changed);
+        }
 
         if (opt.fields & FieldExplicit) {
             if (t.explicit_flag) {
@@ -140,6 +153,71 @@ private:
     std::shared_ptr<ApplyState> m_state;
 };
 
+// --- Local Traditional -> Simplified conversion ---------------------------------
+
+// Shared counters for the local T2S conversion.
+struct T2SState {
+    std::atomic<int> converted{ 0 }; // tracks whose tags actually changed
+    std::atomic<int> unchanged{ 0 }; // tracks with no Traditional text
+};
+
+// file_info_filter that converts every text meta field (that changes) from
+// Traditional Chinese to Simplified Chinese. Idempotent: numbers, empty values
+// and already-Simplified text are left untouched.
+class T2SFilter : public file_info_filter {
+public:
+    T2SFilter(std::shared_ptr<T2SState> state) : m_state(state) {}
+
+    bool apply_filter(trackRef, t_filestats, file_info& info) override
+    {
+        bool any = false;
+        const t_size field_count = info.meta_get_count();
+        for (t_size f = 0; f < field_count; f++) {
+            const char* name = info.meta_enum_name(f);
+            const t_size vc = info.meta_enum_value_count(f);
+            if (!name || !*name || vc == 0) continue;
+
+            pfc::list_t<pfc::string8> vals;
+            bool field_changed = false;
+            for (t_size j = 0; j < vc; j++) {
+                const char* val = info.meta_enum_value(f, j);
+                const char* base = val ? val : "";
+                pfc::string8 s = to_simplified_str(base);
+                if (strcmp(s.get_ptr(), base) != 0) field_changed = true;
+                vals.add_item(s);
+            }
+            if (!field_changed) continue;
+
+            // Rebuild the field from the converted values (preserves order).
+            info.meta_remove_field(name);
+            for (t_size j = 0; j < vals.get_size(); j++) info.meta_add(name, vals[j].get_ptr());
+            any = true;
+        }
+
+        if (any) m_state->converted++; else m_state->unchanged++;
+        return any;
+    }
+
+private:
+    std::shared_ptr<T2SState> m_state;
+};
+
+// Shows the local-conversion summary when the async operation completes.
+class T2SNotify : public completion_notify {
+public:
+    T2SNotify(std::shared_ptr<T2SState> s) : m_state(s) {}
+    void on_completion(unsigned) noexcept override
+    {
+        pfc::string_formatter msg;
+        msg << tr8("Converted ", "转换了 ") << (int)m_state->converted.load()
+            << tr8(" track(s), skipped ", " 首，跳过 ") << (int)m_state->unchanged.load()
+            << tr8(" (no Traditional Chinese).", " 首（无繁体中文）。");
+        popup_message::g_show(msg, tr8("Apple Music Tags", "Apple Music 标签更新"));
+    }
+private:
+    std::shared_ptr<T2SState> m_state;
+};
+
 } // namespace
 
 void apply_tags(const metadb_handle_list& selected, const AppleAlbum& album,
@@ -167,6 +245,19 @@ void apply_tags(const metadb_handle_list& selected, const AppleAlbum& album,
     auto state = std::make_shared<ApplyState>();
     service_ptr_t<file_info_filter> filter = new service_impl_t<TagFilter>(state, album, by_key, path_to_index, options);
     service_ptr_t<completion_notify> notify = new service_impl_t<ApplyNotify>(state);
+
+    static_api_ptr_t<metadb_io_v2>()->update_info_async(
+        selected, filter, parent,
+        metadb_io_v2::op_flag_background | metadb_io_v2::op_flag_delay_ui, notify);
+}
+
+void convert_local_tags_to_simplified(const metadb_handle_list& selected, fb2k::hwnd_t parent)
+{
+    if (selected.get_count() == 0) return;
+
+    auto state = std::make_shared<T2SState>();
+    service_ptr_t<file_info_filter> filter = new service_impl_t<T2SFilter>(state);
+    service_ptr_t<completion_notify> notify = new service_impl_t<T2SNotify>(state);
 
     static_api_ptr_t<metadb_io_v2>()->update_info_async(
         selected, filter, parent,

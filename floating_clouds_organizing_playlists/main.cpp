@@ -6,7 +6,7 @@
 
 DECLARE_COMPONENT_VERSION(
     "Playlist Organizer",
-    "0.1.0",
+    "0.1.2",
     "Organizes a foobar2000 playlist by album artist into per-artist playlists, with Soundtrack / Various Artists / Unknown Artist handling. By Coconutat."
 );
 

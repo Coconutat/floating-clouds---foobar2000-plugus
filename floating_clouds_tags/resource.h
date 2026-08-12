@@ -25,6 +25,10 @@
 #define IDC_CLOSE                        1022
 #define IDC_FORCE_ORDER                  1023
 #define IDC_CONVERT_SC                   1024
+#define IDC_FIELD_COMPOSER               1025
+#define IDC_FIELD_COPYRIGHT              1026
+#define IDC_FIELD_TOTAL_TRACKS           1027
+#define IDC_FIELD_TOTAL_DISCS            1028
 
 // Preferences controls
 #define IDC_LBL_LANGUAGE                 1100
@@ -40,7 +44,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        150
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1025
+#define _APS_NEXT_CONTROL_VALUE         1029
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

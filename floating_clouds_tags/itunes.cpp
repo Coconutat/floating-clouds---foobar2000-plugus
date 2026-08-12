@@ -132,9 +132,13 @@ void fetch_album(int album_id, const char* region, abort_callback& abort, AppleA
             if (!found_album) {
                 out.album_name = r.get_string("collectionName");
                 out.album_artist = r.get_string("collectionArtistName");
+                // Single-artist albums have no collectionArtistName: fall back to
+                // artistName so ALBUM ARTIST can still be written.
+                if (out.album_artist.is_empty()) out.album_artist = r.get_string("artistName");
                 out.genre = r.get_string("primaryGenreName");
                 out.release_date = r.get_string("releaseDate");
                 out.track_count = (int)r.get_number("trackCount");
+                out.copyright = r.get_string("copyright");
                 out.album_id = album_id;
                 out.region = region;
                 found_album = true;
@@ -145,11 +149,15 @@ void fetch_album(int album_id, const char* region, abort_callback& abort, AppleA
             t.artist = r.get_string("artistName");
             t.album = r.get_string("collectionName");
             t.album_artist = r.get_string("collectionArtistName");
+            if (t.album_artist.is_empty()) t.album_artist = t.artist; // same fallback
             t.genre = r.get_string("primaryGenreName");
+            t.composer = r.get_string("composer");
             t.release_date = r.get_string("releaseDate");
             t.track_number = (int)r.get_number("trackNumber");
             t.disc_number = (int)r.get_number("discNumber");
             if (t.disc_number <= 0) t.disc_number = 1;
+            const int td = (int)r.get_number("discCount");
+            if (td > out.disc_count) out.disc_count = td; // album disc count = max
             pfc::string8 exp = r.get_string("trackExplicitness");
             t.explicit_flag = (exp == "explicit");
             out.tracks.add_item(t);
@@ -165,14 +173,12 @@ void fetch_album(int album_id, const char* region, abort_callback& abort, AppleA
 }
 
 // ---------------------------------------------------------------------------
-// Traditional -> Simplified Chinese conversion (HK fallback)
+// Traditional -> Simplified Chinese conversion (independent T2S capability)
 // ---------------------------------------------------------------------------
-
-namespace {
 
 // Convert one UTF-8 string from Traditional to Simplified Chinese using the
 // built-in Windows NLS mapping (no bundled table needed).
-pfc::string8 t2s(const char* utf8)
+pfc::string8 to_simplified_str(const char* utf8)
 {
     pfc::string8 in(utf8 ? utf8 : "");
     if (in.is_empty()) return in;
@@ -186,21 +192,46 @@ pfc::string8 t2s(const char* utf8)
     return pfc::string8(conv);
 }
 
+namespace {
+bool changed_by_t2s(const char* s)
+{
+    return s && *s && strcmp(to_simplified_str(s).get_ptr(), s) != 0;
+}
 } // namespace
 
 void to_simplified(AppleAlbum& a)
 {
-    a.album_name = t2s(a.album_name.get_ptr());
-    a.album_artist = t2s(a.album_artist.get_ptr());
-    a.genre = t2s(a.genre.get_ptr());
+    a.album_name = to_simplified_str(a.album_name.get_ptr());
+    a.album_artist = to_simplified_str(a.album_artist.get_ptr());
+    a.genre = to_simplified_str(a.genre.get_ptr());
+    a.copyright = to_simplified_str(a.copyright.get_ptr());
     for (t_size i = 0; i < a.tracks.get_size(); i++) {
         AppleTrack& t = a.tracks[i];
-        t.title = t2s(t.title.get_ptr());
-        t.artist = t2s(t.artist.get_ptr());
-        t.album = t2s(t.album.get_ptr());
-        t.album_artist = t2s(t.album_artist.get_ptr());
-        t.genre = t2s(t.genre.get_ptr());
+        t.title = to_simplified_str(t.title.get_ptr());
+        t.artist = to_simplified_str(t.artist.get_ptr());
+        t.album = to_simplified_str(t.album.get_ptr());
+        t.album_artist = to_simplified_str(t.album_artist.get_ptr());
+        t.genre = to_simplified_str(t.genre.get_ptr());
+        t.composer = to_simplified_str(t.composer.get_ptr());
     }
+}
+
+bool has_traditional(const AppleAlbum& a)
+{
+    if (changed_by_t2s(a.album_name.get_ptr())) return true;
+    if (changed_by_t2s(a.album_artist.get_ptr())) return true;
+    if (changed_by_t2s(a.genre.get_ptr())) return true;
+    if (changed_by_t2s(a.copyright.get_ptr())) return true;
+    for (t_size i = 0; i < a.tracks.get_size(); i++) {
+        const AppleTrack& t = a.tracks[i];
+        if (changed_by_t2s(t.title.get_ptr())) return true;
+        if (changed_by_t2s(t.artist.get_ptr())) return true;
+        if (changed_by_t2s(t.album.get_ptr())) return true;
+        if (changed_by_t2s(t.album_artist.get_ptr())) return true;
+        if (changed_by_t2s(t.genre.get_ptr())) return true;
+        if (changed_by_t2s(t.composer.get_ptr())) return true;
+    }
+    return false;
 }
 
 void fetch_album_auto(int album_id, const char* region, abort_callback& abort, AppleAlbum& out)
@@ -215,8 +246,9 @@ void fetch_album_auto(int album_id, const char* region, abort_callback& abort, A
         fetch_album(album_id, "hk", abort, hk); // throws on network failure
         if (hk.ok) {
             to_simplified(hk);
-            hk.region = "cn";
-            hk.converted_from_hk = true;
+            // hk.region stays "hk": it is the real source storefront. The
+            // conversion is recorded separately (T2S is independent of source).
+            hk.t2s_applied = true;
             out = hk;
         }
     }
