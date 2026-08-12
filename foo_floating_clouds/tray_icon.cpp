@@ -32,7 +32,7 @@ bool TrayIcon::create(HWND parent_hwnd)
     nid.uID = TRAY_ID;
     nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     nid.uCallbackMessage = FC_WM_TRAY_NOTIFY;
-    nid.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
+    nid.hIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wcscpy_s(nid.szTip, L"Floating Clouds");
     nid.uVersion = NOTIFYICON_VERSION_4;
     

@@ -30,3 +30,7 @@
 
 // MD3 (Material 3) design tokens
 #include "md3_theme.h"
+
+// Plugin module handle (defined in main.cpp) — used to load this component's
+// own resources (tray icon). Declared here so all translation units can use it.
+extern HINSTANCE g_hInstance;
