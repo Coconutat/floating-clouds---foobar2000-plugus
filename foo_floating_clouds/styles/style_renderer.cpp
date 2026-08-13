@@ -243,8 +243,16 @@ void StyleRenderer::render_visualizer(const CSize& size)
         float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
         float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
         m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
-        m_renderer->get_render_target()->FillRectangle(
-            D2D1::RectF(x, y, x + bar_w, bar_area_bottom), m_renderer->get_brush());
+        // Rounded bar tops (max 2px); square off the baseline so bars sit
+        // flush instead of poking past the card bottom.
+        const float bar_r = (std::min)(bar_w / 2.0f, 2.0f);
+        m_renderer->get_render_target()->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x, y, x + bar_w, bar_area_bottom), bar_r, bar_r),
+            m_renderer->get_brush());
+        if (y + bar_r < bar_area_bottom) {
+            m_renderer->get_render_target()->FillRectangle(
+                D2D1::RectF(x, y + bar_r, x + bar_w, bar_area_bottom), m_renderer->get_brush());
+        }
     }
     
     float text_y = bar_area_bottom + 8;

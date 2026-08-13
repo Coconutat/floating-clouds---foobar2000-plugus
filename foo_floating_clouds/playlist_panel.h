@@ -140,6 +140,7 @@ private:
 
     // Interaction
     int m_hover_row = -1;
+    int m_hover_header = -1; // -1 none, 0 back, 1 close (header button hover)
     bool m_open = false;
     CSize m_size;
     UINT_PTR m_marquee_timer = 0; // 16ms frame timer while a row is scrolling

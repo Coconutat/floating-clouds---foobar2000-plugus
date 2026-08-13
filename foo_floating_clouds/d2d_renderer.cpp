@@ -505,10 +505,18 @@ void D2DRenderer::draw_progress_bar(float x, float y, float width, float height,
     
     // Foreground (progress)
     float fg_width = width * std::clamp(progress, 0.0f, 1.0f);
-    if (fg_width >= height) { // Only draw if there's enough space
+    if (fg_width > 0.0f) {
         m_brush->SetColor(fg_color);
-        m_render_target->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(x, y, x + fg_width, y + height), height / 2, height / 2), m_brush);
+        if (fg_width < height) {
+            // Tiny progress: draw a dot (capsule head) so the bar is never
+            // empty at the very start of a track.
+            const float dr = fg_width / 2.0f;
+            m_render_target->FillEllipse(
+                D2D1::Ellipse(D2D1::Point2F(x + dr, y + height / 2.0f), dr, dr), m_brush);
+        } else {
+            m_render_target->FillRoundedRectangle(
+                D2D1::RoundedRect(D2D1::RectF(x, y, x + fg_width, y + height), height / 2, height / 2), m_brush);
+        }
     }
 }
 
@@ -572,7 +580,6 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
                                 if (aw >= rr && ah >= rr &&
                                     SUCCEEDED(converter->CopyPixels(NULL, aw * 4, aw * ah * 4,
                                         (BYTE*)buf.data()))) {
-                                    const float r = (float)WINDOW_CORNER_RADIUS;
                                     const float rx = (float)(aw - 1);
                                     const float ry = (float)(ah - 1);
                                     for (UINT py = 0; py < ah; py++) {

@@ -183,6 +183,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
 
     // Back button (albums / tracks levels)
     if (m_level != Level::Playlists) {
+        if (m_hover_header == 0) {
+            m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
+            m_render_target->FillEllipse(D2D1::Ellipse(
+                D2D1::Point2F((float)(PAD + BTN_W / 2), hdr_y + hdr_h / 2.0f),
+                (float)(BTN_W / 2 - 4), (float)(BTN_W / 2 - 4)), m_brush);
+        }
         m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
         D2D1_RECT_F back_rect = D2D1::RectF((float)PAD, hdr_y, (float)(PAD + BTN_W), hdr_y + hdr_h);
         m_render_target->DrawText(L"\u2190", 1, get_title_format(), back_rect, m_brush,
@@ -190,6 +196,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     }
 
     // Close button
+    if (m_hover_header == 1) {
+        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
+        m_render_target->FillEllipse(D2D1::Ellipse(
+            D2D1::Point2F((float)(W - PAD - BTN_W / 2), hdr_y + hdr_h / 2.0f),
+            (float)(BTN_W / 2 - 4), (float)(BTN_W / 2 - 4)), m_brush);
+    }
     m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
     D2D1_RECT_F close_rect = D2D1::RectF(W - (float)(BTN_W + PAD), hdr_y, W - (float)PAD, hdr_y + hdr_h);
     m_render_target->DrawText(L"\u00D7", 1, get_title_format(), close_rect, m_brush,
@@ -303,7 +315,15 @@ void PlaylistPanel::OnMouseMove(UINT nFlags, CPoint point)
         m_hover_row = row;
         Invalidate();
     }
-    if (row >= 0) {
+    // Header back/close hover (only when not over a list row)
+    const int hdr = (row < 0)
+        ? (hit_back(point) ? 0 : (hit_close(point) ? 1 : -1))
+        : -1;
+    if (hdr != m_hover_header) {
+        m_hover_header = hdr;
+        Invalidate();
+    }
+    if (row >= 0 || hdr >= 0) {
         TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, m_hWnd, 0 };
         TrackMouseEvent(&tme);
     }
@@ -312,6 +332,7 @@ void PlaylistPanel::OnMouseMove(UINT nFlags, CPoint point)
 LRESULT PlaylistPanel::OnMouseLeave(UINT, WPARAM, LPARAM, BOOL& bHandled)
 {
     if (m_hover_row != -1) { m_hover_row = -1; Invalidate(); }
+    if (m_hover_header != -1) { m_hover_header = -1; Invalidate(); }
     stop_marquee_timer();
     bHandled = TRUE;
     return 0;
@@ -797,9 +818,17 @@ void PlaylistPanel::setup_ime_window()
 void PlaylistPanel::draw_search_box(float x, float y, float w, float h)
 {
     const float r = h / 2.0f;
-    // Field background
+    // Focus ring (MD3 filled text field: primary outline when focused)
+    const float ring = m_search_focused ? 1.5f : 0.0f;
+    if (m_search_focused) {
+        m_brush->SetColor(D2DRenderer::hex(md3::primary, 1.0f));
+        m_render_target->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, y, x + w, y + h), r, r), m_brush);
+    }
+    // Field background (inset by the ring so the outline stays crisp)
     m_brush->SetColor(D2DRenderer::hex(md3::surface_container_highest, 1.0f));
-    m_render_target->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, y, x + w, y + h), r, r), m_brush);
+    m_render_target->FillRoundedRectangle(D2D1::RoundedRect(
+        D2D1::RectF(x + ring, y + ring, x + w - ring, y + h - ring),
+        (std::max)(1.0f, r - ring), (std::max)(1.0f, r - ring)), m_brush);
 
     const float tx = x + 10.0f;
     const float tw = (std::max)(20.0f, w - 44.0f); // leave room for the clear button
