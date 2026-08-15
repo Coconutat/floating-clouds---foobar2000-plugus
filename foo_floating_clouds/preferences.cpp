@@ -168,6 +168,7 @@ public:
         COMMAND_HANDLER_EX(IDC_DEBUG_LOG, BN_CLICKED, OnDebugLogClicked)
         COMMAND_HANDLER_EX(IDC_DEFAULT_STYLE, CBN_SELCHANGE, OnStyleChanged)
         COMMAND_HANDLER_EX(IDC_SKIN, CBN_SELCHANGE, OnSkinChanged)
+        COMMAND_HANDLER_EX(IDC_COLOR_MODE, CBN_SELCHANGE, OnColorModeChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnLanguageChanged)
         MESSAGE_HANDLER(FC_WM_HOTKEY_CAPTURED, OnHotkeyCaptured)
     END_MSG_MAP()
@@ -179,6 +180,7 @@ private:
     void OnDebugLogClicked(UINT, int, CWindow);
     void OnStyleChanged(UINT, int, CWindow);
     void OnSkinChanged(UINT, int, CWindow);
+    void OnColorModeChanged(UINT, int, CWindow);
     void OnLanguageChanged(UINT, int, CWindow);
     void ReloadLocalizedStrings();
     LRESULT OnHotkeyCaptured(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
@@ -234,6 +236,21 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
     int skin_sel = (int)cfg_skin.get_value();
     if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
     skin_combo.SetCurSel(skin_sel);
+
+    // Color mode combo (localized names)
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    for (int i = 0; i < (int)FloatingColorMode::Count; i++) {
+        mode_combo.AddString(tr_color_mode(static_cast<FloatingColorMode>(i)));
+    }
+    int mode_sel = (int)cfg_mode.get_value();
+    if (mode_sel < 0 || mode_sel >= (int)FloatingColorMode::Count) mode_sel = DEFAULT_COLOR_MODE;
+    mode_combo.SetCurSel(mode_sel);
+
+    // Font family (empty = follow foobar2000's default UI font)
+    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
+    pfc::stringcvt::string_wide_from_utf8 wide_font(cfg_font.get());
+    SetDlgItemTextW(IDC_FONT_FAMILY, wide_font.is_empty() ? L"" : wide_font.get_ptr());
 
     // Language combo
     CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
@@ -315,6 +332,16 @@ void CMyPreferences::OnSkinChanged(UINT, int, CWindow)
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
+void CMyPreferences::OnColorModeChanged(UINT, int, CWindow)
+{
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    int sel = mode_combo.GetCurSel();
+    if (sel < 0) return;
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    cfg_mode = sel;
+    FloatingCloudsWindow::apply_preferences(); // hot reload
+}
+
 void CMyPreferences::OnLanguageChanged(UINT, int, CWindow)
 {
     CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
@@ -347,6 +374,17 @@ void CMyPreferences::ReloadLocalizedStrings()
     if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
     skin_combo.SetCurSel(skin_sel);
 
+    // Color mode combo items (rebuild, restore selection from config)
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    mode_combo.ResetContent();
+    for (int i = 0; i < (int)FloatingColorMode::Count; i++) {
+        mode_combo.AddString(tr_color_mode(static_cast<FloatingColorMode>(i)));
+    }
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    int mode_sel = (int)cfg_mode.get_value();
+    if (mode_sel < 0 || mode_sel >= (int)FloatingColorMode::Count) mode_sel = DEFAULT_COLOR_MODE;
+    mode_combo.SetCurSel(mode_sel);
+
     SetDlgItemText(IDC_GRP_HOTKEYS, tr(L"Hotkeys", L"热键"));
     SetDlgItemText(IDC_LBL_DRAG, tr(L"Drag mode toggle:", L"拖拽模式切换："));
     SetDlgItemText(IDC_LBL_SHOWHIDE, tr(L"Show/Hide:", L"显示/隐藏："));
@@ -360,6 +398,8 @@ void CMyPreferences::ReloadLocalizedStrings()
     SetDlgItemText(IDC_LBL_DEFAULT_STYLE, tr(L"Default style:", L"默认样式："));
     SetDlgItemText(IDC_GRP_SKIN, tr(L"Skin", L"皮肤"));
     SetDlgItemText(IDC_LBL_DEFAULT_SKIN, tr(L"Default skin:", L"默认皮肤："));
+    SetDlgItemText(IDC_LBL_COLOR_MODE, tr(L"Color mode:", L"深浅模式："));
+    SetDlgItemText(IDC_LBL_FONT_FAMILY, tr(L"Font family (blank = follow foobar2000):", L"字体（留空 = 跟随 foobar2000）："));
     SetDlgItemText(IDC_GRP_LANGUAGE, tr(L"Language", L"语言"));
     SetDlgItemText(IDC_LBL_LANGUAGE, tr(L"UI Language:", L"界面语言："));
 }
@@ -418,6 +458,7 @@ bool CMyPreferences::HasChanged()
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
     cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
 
     CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
     int opacity = slider.GetPos();
@@ -427,11 +468,23 @@ bool CMyPreferences::HasChanged()
     int style = style_combo.GetCurSel();
     CComboBox skin_combo = GetDlgItem(IDC_SKIN);
     int skin = skin_combo.GetCurSel();
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    int mode = mode_combo.GetCurSel();
+    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
+    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
+    wchar_t font_buf[256] = {};
+    font_edit.GetWindowText(font_buf, 256);
+    pfc::stringcvt::string_utf8_from_wide font_utf8(font_buf);
+    const char* cur_font = cfg_font.get();
+    if (!cur_font) cur_font = "";
+    bool font_changed = (strcmp(cur_font, font_utf8.get_ptr()) != 0);
 
     return opacity != (int)cfg_opacity.get_value() ||
            auto_hide != cfg_auto_hide.get() ||
            (style >= 0 && style != (int)cfg_style.get_value()) ||
-           (skin >= 0 && skin != (int)cfg_skin.get_value());
+           (skin >= 0 && skin != (int)cfg_skin.get_value()) ||
+           (mode >= 0 && mode != (int)cfg_mode.get_value()) ||
+           font_changed;
 }
 
 void CMyPreferences::OnChanged()
@@ -464,6 +517,22 @@ void CMyPreferences::apply()
         cfg_skin = skin;
     }
 
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    int mode = mode_combo.GetCurSel();
+    if (mode >= 0) {
+        cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+        cfg_mode = mode;
+    }
+
+    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
+    wchar_t font_buf[256] = {};
+    font_edit.GetWindowText(font_buf, 256);
+    {
+        cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
+        pfc::stringcvt::string_utf8_from_wide font_utf8(font_buf);
+        cfg_font = font_utf8.get_ptr();
+    }
+
     FloatingCloudsWindow::apply_preferences();
     OnChanged();
 }
@@ -481,6 +550,12 @@ void CMyPreferences::reset()
 
     CComboBox skin_combo = GetDlgItem(IDC_SKIN);
     skin_combo.SetCurSel(DEFAULT_SKIN);
+
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    mode_combo.SetCurSel(DEFAULT_COLOR_MODE);
+
+    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
+    font_edit.SetWindowText(L"");
 
     // Hotkeys -> defaults + re-register
     {

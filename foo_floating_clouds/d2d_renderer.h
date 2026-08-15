@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stdafx.h"
+#include <string>
 #include "config.h"
 #include "skin_theme.h"
 
@@ -46,8 +47,17 @@ public:
     // Visual skin (material system). Rebuilds per-skin resources (shadow,
     // specular brush, cached text formats) so the next frame renders correctly.
     void set_skin(FloatingSkin skin);
-    const SkinTokens& skin() const { return get_skin_tokens(m_skin); }
+    // Light mode: use the skin's light token set (text, glass, shadows flip
+    // together). Rebuilds the same per-skin resources.
+    void set_light(bool light);
+    bool is_light() const { return m_light; }
+    const SkinTokens& skin() const { return get_skin_tokens(m_skin, m_light); }
     FloatingSkin get_skin() const { return m_skin; }
+
+    // Font family used by all cached text formats. Empty/unknown falls back
+    // to Segoe UI at CreateTextFormat time; callers resolve the real family.
+    void set_font_family(const wchar_t* family);
+    const wchar_t* get_font_family() const { return m_font_family.c_str(); }
 
     // Rounded surface card + elevation shadow (ULW) / opaque fill (fallback).
     void draw_surface_card(const D2D1_RECT_F& rect, float radius);
@@ -171,6 +181,16 @@ protected:
 
     // Active visual skin
     FloatingSkin m_skin = FloatingSkin::MD3;
+
+    // Active color mode (light = use light token set)
+    bool m_light = false;
+
+    // Active font family (resolved by FloatingCloudsWindow: custom cfg or
+    // foobar2000's default UI font; falls back to Segoe UI).
+    std::wstring m_font_family = L"Segoe UI";
+
+    // Internal: rebuild the per-skin resources (shared by set_skin/set_light).
+    void rebuild_skin_resources();
 
     // Internal: build the ULW (per-pixel alpha) or Hwnd (fallback) stack.
     bool create_ulw_resources();

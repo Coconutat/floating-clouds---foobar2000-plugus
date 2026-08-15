@@ -264,9 +264,19 @@ bool D2DRenderer::build_shadow_bitmap(float alpha, int blur, ID2D1Bitmap** out_b
     }
 
     // Upload as a premultiplied black bitmap (RGB=0, A = blurred alpha * strength).
+    // Feather the alpha to zero at the window edges so the shadow never gets
+    // clipped by the square window boundary (visible as a rectangular ghost
+    // on light backgrounds).
     std::vector<uint32_t> px((size_t)w * h);
-    for (size_t i = 0; i < (size_t)w * h; i++) {
-        px[i] = (uint32_t)(a[i] * alpha) << 24; // B8G8R8A8: alpha in the high byte
+    const float feather = (float)inset;
+    for (int y = 0; y < h; y++) {
+        const float dy = (float)(std::min)(y, h - 1 - y);
+        for (int x = 0; x < w; x++) {
+            const float dx = (float)(std::min)(x, w - 1 - x);
+            const float edge = (std::min)(1.0f, (std::min)(dx, dy) / feather);
+            const size_t i = (size_t)y * w + x;
+            px[i] = (uint32_t)(a[i] * alpha * edge) << 24; // B8G8R8A8: alpha in the high byte
+        }
     }
     HRESULT hr = m_ulw_target->CreateBitmap(D2D1::SizeU((UINT)w, (UINT)h), px.data(),
         (UINT)w * 4,
@@ -361,7 +371,20 @@ void D2DRenderer::set_skin(FloatingSkin skin)
 {
     if (m_skin == skin) return;
     m_skin = skin;
+    rebuild_skin_resources();
+    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Apple ? "Apple" : "MD3");
+}
 
+void D2DRenderer::set_light(bool light)
+{
+    if (m_light == light) return;
+    m_light = light;
+    rebuild_skin_resources();
+    FB2K_console_formatter() << "Floating Clouds: color mode switched to " << (light ? "Light" : "Dark");
+}
+
+void D2DRenderer::rebuild_skin_resources()
+{
     // Per-skin resources: shadow bitmaps, glass gradient brushes, cached fonts.
     release_glass_brushes();
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
@@ -371,7 +394,6 @@ void D2DRenderer::set_skin(FloatingSkin skin)
     if (m_mode == PresentMode::ULW) {
         create_shadow();
     }
-    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Apple ? "Apple" : "MD3");
 }
 
 void D2DRenderer::release_glass_brushes()
@@ -858,12 +880,27 @@ void D2DRenderer::draw_progress_ring(float cx, float cy, float radius, float thi
     }
 }
 
+void D2DRenderer::set_font_family(const wchar_t* family)
+{
+    const std::wstring next = family ? std::wstring(family) : std::wstring(L"Segoe UI");
+    if (next == m_font_family) return;
+    m_font_family = next;
+
+    // Recreate cached text formats with the new family.
+    if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
+    if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
+    if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
+    if (m_small_left_format) { m_small_left_format->Release(); m_small_left_format = nullptr; }
+    pfc::stringcvt::string_utf8_from_wide utf8(next.c_str());
+    FB2K_console_formatter() << "Floating Clouds: font family switched to " << utf8;
+}
+
 IDWriteTextFormat* D2DRenderer::get_text_format(float size, DWRITE_FONT_WEIGHT weight)
 {
     IDWriteTextFormat* format = nullptr;
     
     m_dwrite_factory->CreateTextFormat(
-        L"Segoe UI", NULL, weight, DWRITE_FONT_STYLE_NORMAL,
+        m_font_family.c_str(), NULL, weight, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, size, L"en-US", &format);
     
     if (format) {
