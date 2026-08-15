@@ -298,8 +298,17 @@ void StyleRenderer::render_lyrics_line(const CSize& size)
     }
     
     float progress = m_window->get_display_progress();
-    m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
-                                   avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
+    // Progress bar sits inside the card like Minimal: above the card's bottom
+    // edge and inset from the sides by pad + shadow inset + extra corner
+    // clearance, so its rounded tips never poke past the card's rounded
+    // bottom corners (plan 16 fix).
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
+    const float bar_h = (float)PROGRESS_BAR_HEIGHT;
+    const float bar_x = pad + inset + 4.0f;
+    const float bar_w = (float)size.cx - bar_x * 2;
+    const float bar_y = (float)size.cy - inset - bar_h - 2.0f;
+    m_renderer->draw_progress_bar(bar_x, bar_y,
+                                   bar_w, bar_h, progress,
                                    D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
                                    D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
 }
