@@ -7,6 +7,7 @@
 #include "playback_listener.h"
 #include "tray_icon.h"
 #include "playlist_panel.h"
+#include <SDK/foobar2000/helpers/DarkMode.h>
 
 // ============================================================================
 // FloatingCloudsWindow - The main floating overlay window
@@ -83,6 +84,17 @@ public:
     // Set a specific skin (material system) / cycle to next skin
     void set_skin(FloatingSkin skin);
     void cycle_skin();
+
+    // Set color mode (Follow / Dark / Light). Hot-reloads the active skin's
+    // light/dark token set.
+    void set_color_mode(FloatingColorMode mode);
+    FloatingColorMode get_color_mode() const { return m_color_mode; }
+    // Effective light mode: explicit Light, or Follow + foobar2000 is light.
+    bool effective_light() const;
+
+    // Resolve and apply the active font family (custom cfg string, else
+    // foobar2000's default UI font, else Segoe UI). Safe to call repeatedly.
+    void refresh_font_family();
     
     // Update playback info (called from playback listener)
     void on_playback_new_track(const char* title, const char* artist, const char* album, 
@@ -228,6 +240,22 @@ private:
     int m_hover_button = -1;
     int m_pressed_button = -1;
     bool m_hover_tracking = false;
+
+    // Color mode: Follow / Dark / Light (light = use skin light tokens).
+    FloatingColorMode m_color_mode = static_cast<FloatingColorMode>(DEFAULT_COLOR_MODE);
+    // Tracks foobar2000's dark/light setting; auto-updates via ui_config callback.
+    fb2k::CDarkModeHooks m_dark_hooks;
+
+    // Receives ui_fonts_changed from foobar2000 and refreshes DWrite formats.
+    class ConfigCallback : public ui_config_callback_impl {
+    public:
+        explicit ConfigCallback(FloatingCloudsWindow* w) : m_w(w) {}
+        void ui_fonts_changed() override;
+        void ui_colors_changed() override {}
+    private:
+        FloatingCloudsWindow* m_w;
+    };
+    ConfigCallback m_config_callback;
 
     // Process-wide pointer to the active window (so Preferences can reload hotkeys)
     static FloatingCloudsWindow* s_instance;

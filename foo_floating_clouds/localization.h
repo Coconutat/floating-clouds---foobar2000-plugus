@@ -43,3 +43,14 @@ inline const wchar_t* tr_skin(FloatingSkin s)
         default: return L"";
     }
 }
+
+// Localized name of a color mode.
+inline const wchar_t* tr_color_mode(FloatingColorMode m)
+{
+    switch (m) {
+        case FloatingColorMode::Follow: return tr(L"Follow foobar2000", L"跟随 foobar2000");
+        case FloatingColorMode::Dark: return tr(L"Dark", L"深色");
+        case FloatingColorMode::Light: return tr(L"Light", L"浅色");
+        default: return L"";
+    }
+}

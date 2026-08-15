@@ -135,7 +135,77 @@ constexpr SkinTokens apple_skin = {
     10.0f,                           // small_size
 };
 
-inline const SkinTokens& get_skin_tokens(FloatingSkin skin)
+// MD3 light skin: Material 3 baseline LIGHT scheme, same token source
+// (SDK/MD3/material-web/tokens/versions/v0_192/_md-sys-color.scss values-light).
+constexpr SkinTokens md3_skin_light = {
+    0xF3EDF7,                        // surface (neutral94 surface-container)
+    0xECE6F0,                        // surface_high (neutral92)
+    0xE6E0E9,                        // surface_highest (neutral90)
+    0x1D1B20,                        // on_surface (neutral10)
+    0x49454F,                        // on_surface_variant (neutral-variant30)
+    0x6750A4,                        // primary (primary40)
+    0x7D5260,                        // tertiary (tertiary40)
+    0xB3261E,                        // error (error40)
+    0x49454F, 0.12f,                 // button_fill (inactive)
+    0x6750A4, 0.20f,                 // button_fill_active
+    0x49454F, 0.25f,                 // progress_track
+    0xF3EDF7, 1.0f,                  // glass_fill_top (opaque card)
+    0xF3EDF7, 1.0f,                  // glass_fill_bottom
+    0xFFFFFF, 0.0f,                  // glass_stroke_top (none)
+    0xFFFFFF, 0.0f,                  // glass_stroke_bottom
+    1.0f,                            // glass_stroke_width
+    0xFFFFFF, 0.0f, 0.0f,            // glass_specular (none)
+    16.0f,                           // corner_card
+    8.0f,                            // shadow_inset
+    0.25f, 5,                        // ambient shadow (lighter in light mode)
+    0.0f, 0,                         // contact shadow (disabled)
+    md3::hover_state,                // hover_state
+    md3::pressed_state,              // pressed_state
+    14.0f,                           // title_size
+    11.0f,                           // artist_size
+    10.0f,                           // small_size
+};
+
+// Apple light skin: iOS light liquid-glass approximation.
+// - Light frosted glass (mostly opaque white) + DARK text: this is the
+//   light-mode counterpart of the dark glass; text and material switch
+//   together, never light glass + white text.
+// - Buttons: translucent gray circles (black 8%) with dark glyphs; active
+//   keeps the systemBlue fill.
+// - systemBlue light #007AFF; systemPink light #FF2D55.
+constexpr SkinTokens apple_skin_light = {
+    0xF2F2F7,                        // surface (Apple light elevated, Hwnd fallback)
+    0xE9E9EE,                        // surface_high
+    0xE0E0E5,                        // surface_highest
+    0x1C1C1E,                        // on_surface (dark text on light glass)
+    0x3A3A3C,                        // on_surface_variant (dark secondary label)
+    0x007AFF,                        // primary (iOS systemBlue light)
+    0xFF2D55,                        // tertiary (iOS systemPink light)
+    0xFF3B30,                        // error (iOS systemRed light)
+    0x000000, 0.08f,                 // button_fill (translucent gray circle)
+    0x007AFF, 0.18f,                 // button_fill_active (blue tint fill)
+    0x000000, 0.12f,                 // progress_track (translucent gray track)
+    0xFFFFFF, 0.78f,                 // glass_fill_top (bright frosted top)
+    0xF2F2F7, 0.72f,                 // glass_fill_bottom (light frosted base)
+    0xFFFFFF, 0.85f,                 // glass_stroke_top (bright top edge)
+    0x1C1C1E, 0.10f,                 // glass_stroke_bottom (dark hairline for definition)
+    1.5f,                            // glass_stroke_width
+    0xFFFFFF, 0.25f, 0.20f,          // glass_specular (tight top-edge bloom)
+    24.0f,                           // corner_card
+    8.0f,                            // shadow_inset
+    0.12f, 10,                       // ambient shadow (lighter in light mode)
+    0.14f, 2,                        // contact shadow
+    0.07f,                           // hover_state
+    0.12f,                           // pressed_state
+    15.0f,                           // title_size
+    12.0f,                           // artist_size
+    10.0f,                           // small_size
+};
+
+inline const SkinTokens& get_skin_tokens(FloatingSkin skin, bool light)
 {
+    if (light) {
+        return (skin == FloatingSkin::Apple) ? apple_skin_light : md3_skin_light;
+    }
     return (skin == FloatingSkin::Apple) ? apple_skin : md3_skin;
 }

@@ -16,6 +16,7 @@ FloatingCloudsWindow::FloatingCloudsWindow()
     , m_playback_listener(std::make_unique<PlaybackListener>(this))
     , m_tray_icon(std::make_unique<TrayIcon>(this))
     , m_playlist_panel(std::make_unique<PlaylistPanel>())
+    , m_config_callback(this)
 {
 }
 
@@ -86,6 +87,17 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
         if ((int)sk != saved) cfg_skin = (int)sk;
         D2DRenderer::set_skin(sk);
     }
+    // Apply the saved color mode (0 = follow foobar2000, 1 = dark, 2 = light).
+    {
+        cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+        int saved = (int)cfg_mode.get_value();
+        m_color_mode = (saved >= 0 && saved < (int)FloatingColorMode::Count)
+            ? static_cast<FloatingColorMode>(saved) : static_cast<FloatingColorMode>(DEFAULT_COLOR_MODE);
+        if ((int)m_color_mode != saved) cfg_mode = (int)m_color_mode;
+        D2DRenderer::set_light(effective_light());
+    }
+    // Apply the font family (custom cfg, else foobar2000's default UI font).
+    refresh_font_family();
     
     SetWindowPos(NULL, x, y, size.cx, size.cy, SWP_NOZORDER | SWP_SHOWWINDOW);
     
@@ -152,10 +164,32 @@ void FloatingCloudsWindow::apply_preferences()
     if (sk != s_instance->get_skin()) {
         s_instance->set_skin(sk);
     }
+
+    // Color mode: switch if changed (hot reload from Preferences).
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    int mv = (int)cfg_mode.get_value();
+    FloatingColorMode cm = (mv >= 0 && mv < (int)FloatingColorMode::Count)
+        ? static_cast<FloatingColorMode>(mv) : static_cast<FloatingColorMode>(DEFAULT_COLOR_MODE);
+    if (cm != s_instance->m_color_mode) {
+        s_instance->set_color_mode(cm);
+    }
+
+    // Font family: re-resolve (custom cfg may have changed).
+    s_instance->refresh_font_family();
 }
 
 bool FloatingCloudsWindow::render_now()
 {
+    // Follow foobar2000 light/dark changes between paints (m_dark_hooks
+    // updates itself via ui_config callback; we just compare + apply).
+    const bool light = effective_light();
+    if (light != is_light()) {
+        D2DRenderer::set_light(light);
+        if (m_playlist_panel && m_playlist_panel->IsWindow()) {
+            m_playlist_panel->set_light(light);
+        }
+    }
+
     if (!begin_draw()) {
         FB2K_console_formatter() << "Floating Clouds: render_now begin_draw FAILED";
         return false;
@@ -613,12 +647,82 @@ void FloatingCloudsWindow::set_skin(FloatingSkin skin)
     cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
     cfg_skin = static_cast<int32_t>(skin);
 
-    // Keep the playlist panel on the same skin.
+    // Keep the playlist panel on the same skin + light/dark mode + font.
     if (m_playlist_panel && m_playlist_panel->IsWindow()) {
         m_playlist_panel->set_skin(skin);
+        m_playlist_panel->set_light(effective_light());
+        m_playlist_panel->set_font_family(get_font_family());
     }
 
     Invalidate();
+}
+
+void FloatingCloudsWindow::set_color_mode(FloatingColorMode mode)
+{
+    m_color_mode = mode;
+
+    // Save preference
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    cfg_mode = static_cast<int32_t>(mode);
+
+    // Apply the effective light/dark token set everywhere.
+    D2DRenderer::set_light(effective_light());
+    if (m_playlist_panel && m_playlist_panel->IsWindow()) {
+        m_playlist_panel->set_light(effective_light());
+        m_playlist_panel->set_font_family(get_font_family());
+    }
+
+    Invalidate();
+}
+
+bool FloatingCloudsWindow::effective_light() const
+{
+    switch (m_color_mode) {
+        case FloatingColorMode::Light: return true;
+        case FloatingColorMode::Dark:  return false;
+        case FloatingColorMode::Follow:
+        default:
+            // m_dark_hooks auto-updates from foobar2000's ui_config callback.
+            return !m_dark_hooks.IsDark();
+    }
+}
+
+void FloatingCloudsWindow::ConfigCallback::ui_fonts_changed()
+{
+    if (m_w) m_w->refresh_font_family();
+}
+
+void FloatingCloudsWindow::refresh_font_family()
+{
+    std::wstring family = L"Segoe UI";
+
+    // 1) Explicit custom font from Preferences (empty = follow foobar2000).
+    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
+    const char* custom = cfg_font.get();
+    if (custom && *custom) {
+        pfc::stringcvt::string_wide_from_utf8 wide(custom);
+        if (!wide.is_empty()) family = wide.get_ptr();
+    } else {
+        // 2) Follow foobar2000's default UI font.
+        auto api = ui_config_manager::tryGet();
+        if (api.is_valid()) {
+            t_ui_font font = api->query_font(ui_font_default);
+            if (font) {
+                LOGFONTW lf = {};
+                if (::GetObjectW((HFONT)font, sizeof(lf), &lf) && lf.lfFaceName[0]) {
+                    family = lf.lfFaceName;
+                }
+            }
+        }
+    }
+
+    if (family != get_font_family()) {
+        D2DRenderer::set_font_family(family.c_str());
+        if (m_playlist_panel && m_playlist_panel->IsWindow()) {
+            m_playlist_panel->set_font_family(family.c_str());
+        }
+        Invalidate();
+    }
 }
 
 void FloatingCloudsWindow::on_playback_new_track(const char* title, const char* artist, 
