@@ -15,6 +15,8 @@
 #define IDC_HOTKEY_STYLE                1007
 #define IDC_HOTKEY_RECORD               1008
 #define IDC_DEBUG_LOG                   1009
+#define IDC_SKIN                        1010
+#define IDC_HOTKEY_SKIN                 1011
 
 // Localization
 #define IDC_LANGUAGE                    1100
@@ -29,6 +31,9 @@
 #define IDC_GRP_STYLE                   1109
 #define IDC_GRP_LANGUAGE                1110
 #define IDC_LBL_LANGUAGE                1111
+#define IDC_GRP_SKIN                    1112
+#define IDC_LBL_DEFAULT_SKIN            1113
+#define IDC_LBL_CYCLE_SKIN              1114
 
 // Next default values for new objects
 #ifdef APSTUDIO_INVOKED

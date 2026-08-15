@@ -1,6 +1,8 @@
 #pragma once
 
 #include "stdafx.h"
+#include "config.h"
+#include "skin_theme.h"
 
 // ============================================================================
 // D2DRenderer - Direct2D rendering engine for the floating window
@@ -40,6 +42,12 @@ public:
 
     // Global window opacity (ULW: folded into per-pixel alpha at present time).
     void set_global_opacity(float opacity);
+
+    // Visual skin (material system). Rebuilds per-skin resources (shadow,
+    // specular brush, cached text formats) so the next frame renders correctly.
+    void set_skin(FloatingSkin skin);
+    const SkinTokens& skin() const { return get_skin_tokens(m_skin); }
+    FloatingSkin get_skin() const { return m_skin; }
 
     // Rounded surface card + elevation shadow (ULW) / opaque fill (fallback).
     void draw_surface_card(const D2D1_RECT_F& rect, float radius);
@@ -122,8 +130,18 @@ protected:
     RECT m_dib_rect{};
     float m_global_opacity = 1.0f;
 
-    // Surface-card shadow (ULW): CPU box-blurred rounded-rect bitmap
+    // Surface-card shadows (ULW): CPU box-blurred rounded-rect bitmaps.
+    // Ambient = wide soft layer; contact = tight layer under the card edge.
     ID2D1Bitmap* m_shadow_bitmap = nullptr;
+    ID2D1Bitmap* m_shadow_contact_bitmap = nullptr;
+
+    // Apple liquid-glass gradient brushes (ULW, rebuilt on set_skin)
+    ID2D1LinearGradientBrush* m_glass_fill_brush = nullptr;
+    ID2D1GradientStopCollection* m_glass_fill_stops = nullptr;
+    ID2D1LinearGradientBrush* m_specular_brush = nullptr;
+    ID2D1GradientStopCollection* m_specular_stops = nullptr;
+    ID2D1LinearGradientBrush* m_glass_stroke_brush = nullptr;
+    ID2D1GradientStopCollection* m_glass_stroke_stops = nullptr;
 
     ID2D1SolidColorBrush* m_brush = nullptr;
     
@@ -151,11 +169,21 @@ protected:
     // Set when the last frame scrolled any long text; keeps the frame loop alive
     bool m_marquee_active = false;
 
+    // Active visual skin
+    FloatingSkin m_skin = FloatingSkin::MD3;
+
     // Internal: build the ULW (per-pixel alpha) or Hwnd (fallback) stack.
     bool create_ulw_resources();
     bool create_hwnd_resources();
     bool create_brush_and_stroke();
     bool create_shadow();
+    bool build_shadow_bitmap(float alpha, int blur, ID2D1Bitmap** out_bitmap);
+    void release_glass_brushes();
+    void ensure_gradient_brush(ID2D1LinearGradientBrush** brush,
+                               ID2D1GradientStopCollection** stops,
+                               const D2D1_POINT_2F& p0, const D2D1_POINT_2F& p1,
+                               const D2D1_GRADIENT_STOP* gradient_stops, UINT32 count);
+    float effective_corner(float radius, const D2D1_RECT_F& rect) const;
 
     // Present-loop diagnostics (debug logging): 1s summary of frame/failure counts.
     bool debug_enabled();

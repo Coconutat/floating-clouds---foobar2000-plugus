@@ -12,6 +12,8 @@ HotkeyManager::HotkeyManager()
     , m_vis_vk(cfg_guids::hk_vis_vk, DEFAULT_HK_VIS_VK)
     , m_style_mod(cfg_guids::hk_style_mod, DEFAULT_HK_STYLE_MOD)
     , m_style_vk(cfg_guids::hk_style_vk, DEFAULT_HK_STYLE_VK)
+    , m_skin_mod(cfg_guids::hk_skin_mod, DEFAULT_HK_SKIN_MOD)
+    , m_skin_vk(cfg_guids::hk_skin_vk, DEFAULT_HK_SKIN_VK)
 {
 }
 
@@ -28,6 +30,7 @@ bool HotkeyManager::register_all(HWND hwnd)
     ok &= register_single(hwnd, ID_DRAG, (uint32_t)m_drag_mod.get_value(), (uint32_t)m_drag_vk.get_value());
     ok &= register_single(hwnd, ID_VISIBILITY, (uint32_t)m_vis_mod.get_value(), (uint32_t)m_vis_vk.get_value());
     ok &= register_single(hwnd, ID_STYLE, (uint32_t)m_style_mod.get_value(), (uint32_t)m_style_vk.get_value());
+    ok &= register_single(hwnd, ID_SKIN, (uint32_t)m_skin_mod.get_value(), (uint32_t)m_skin_vk.get_value());
     
     return ok;
 }
@@ -50,6 +53,7 @@ HotkeyManager::Action HotkeyManager::handle_hotkey(WPARAM wParam)
         case ID_DRAG: return ActionToggleDrag;
         case ID_VISIBILITY: return ActionToggleVisibility;
         case ID_STYLE: return ActionCycleStyle;
+        case ID_SKIN: return ActionCycleSkin;
         default: return ActionNone;
     }
 }
@@ -96,4 +100,9 @@ HotkeyManager::HotkeyInfo HotkeyManager::get_visibility_hotkey()
 HotkeyManager::HotkeyInfo HotkeyManager::get_style_hotkey()
 {
     return { (uint32_t)m_style_mod.get_value(), (uint32_t)m_style_vk.get_value() };
+}
+
+HotkeyManager::HotkeyInfo HotkeyManager::get_skin_hotkey()
+{
+    return { (uint32_t)m_skin_mod.get_value(), (uint32_t)m_skin_vk.get_value() };
 }

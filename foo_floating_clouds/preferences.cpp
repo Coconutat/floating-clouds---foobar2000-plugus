@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "resource.h"
 #include "preferences.h"
 #include "config.h"
@@ -167,6 +167,7 @@ public:
         COMMAND_HANDLER_EX(IDC_AUTO_HIDE, BN_CLICKED, OnAutoHideClicked)
         COMMAND_HANDLER_EX(IDC_DEBUG_LOG, BN_CLICKED, OnDebugLogClicked)
         COMMAND_HANDLER_EX(IDC_DEFAULT_STYLE, CBN_SELCHANGE, OnStyleChanged)
+        COMMAND_HANDLER_EX(IDC_SKIN, CBN_SELCHANGE, OnSkinChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnLanguageChanged)
         MESSAGE_HANDLER(FC_WM_HOTKEY_CAPTURED, OnHotkeyCaptured)
     END_MSG_MAP()
@@ -177,6 +178,7 @@ private:
     void OnAutoHideClicked(UINT, int, CWindow);
     void OnDebugLogClicked(UINT, int, CWindow);
     void OnStyleChanged(UINT, int, CWindow);
+    void OnSkinChanged(UINT, int, CWindow);
     void OnLanguageChanged(UINT, int, CWindow);
     void ReloadLocalizedStrings();
     LRESULT OnHotkeyCaptured(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
@@ -191,7 +193,7 @@ private:
     fb2k::CDarkModeHooks m_dark;
 
     // Hotkey capture boxes (subclassed edits)
-    HotkeyEdit m_hk_drag, m_hk_vis, m_hk_style;
+    HotkeyEdit m_hk_drag, m_hk_vis, m_hk_style, m_hk_skin;
 };
 
 BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
@@ -223,6 +225,16 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
     }
     style_combo.SetCurSel((int)cfg_style.get_value());
 
+    // Skin combo (localized names)
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    for (int i = 0; i < (int)FloatingSkin::Count; i++) {
+        skin_combo.AddString(tr_skin(static_cast<FloatingSkin>(i)));
+    }
+    int skin_sel = (int)cfg_skin.get_value();
+    if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
+    skin_combo.SetCurSel(skin_sel);
+
     // Language combo
     CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
     lang_combo.AddString(L"English");
@@ -239,6 +251,7 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
     m_hk_drag.SubclassWindow(GetDlgItem(IDC_HOTKEY_DRAG));
     m_hk_vis.SubclassWindow(GetDlgItem(IDC_HOTKEY_VISIBILITY));
     m_hk_style.SubclassWindow(GetDlgItem(IDC_HOTKEY_STYLE));
+    m_hk_skin.SubclassWindow(GetDlgItem(IDC_HOTKEY_SKIN));
     {
         cfg_var_modern::cfg_int dm(cfg_guids::hk_drag_mod, DEFAULT_HK_DRAG_MOD);
         cfg_var_modern::cfg_int dv(cfg_guids::hk_drag_vk, DEFAULT_HK_DRAG_VK);
@@ -246,9 +259,12 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
         cfg_var_modern::cfg_int vv(cfg_guids::hk_vis_vk, DEFAULT_HK_VIS_VK);
         cfg_var_modern::cfg_int sm(cfg_guids::hk_style_mod, DEFAULT_HK_STYLE_MOD);
         cfg_var_modern::cfg_int sv(cfg_guids::hk_style_vk, DEFAULT_HK_STYLE_VK);
+        cfg_var_modern::cfg_int km(cfg_guids::hk_skin_mod, DEFAULT_HK_SKIN_MOD);
+        cfg_var_modern::cfg_int kv(cfg_guids::hk_skin_vk, DEFAULT_HK_SKIN_VK);
         m_hk_drag.SetHotkey((uint32_t)dm.get_value(), (uint32_t)dv.get_value());
         m_hk_vis.SetHotkey((uint32_t)vm.get_value(), (uint32_t)vv.get_value());
         m_hk_style.SetHotkey((uint32_t)sm.get_value(), (uint32_t)sv.get_value());
+        m_hk_skin.SetHotkey((uint32_t)km.get_value(), (uint32_t)kv.get_value());
     }
 
     m_initialized = true;
@@ -289,6 +305,16 @@ void CMyPreferences::OnStyleChanged(UINT, int, CWindow)
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
+void CMyPreferences::OnSkinChanged(UINT, int, CWindow)
+{
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    int sel = skin_combo.GetCurSel();
+    if (sel < 0) return;
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    cfg_skin = sel;
+    FloatingCloudsWindow::apply_preferences(); // hot reload
+}
+
 void CMyPreferences::OnLanguageChanged(UINT, int, CWindow)
 {
     CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
@@ -310,16 +336,30 @@ void CMyPreferences::ReloadLocalizedStrings()
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
     style_combo.SetCurSel((int)cfg_style.get_value());
 
+    // Skin combo items (rebuild, restore selection from config)
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    skin_combo.ResetContent();
+    for (int i = 0; i < (int)FloatingSkin::Count; i++) {
+        skin_combo.AddString(tr_skin(static_cast<FloatingSkin>(i)));
+    }
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    int skin_sel = (int)cfg_skin.get_value();
+    if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
+    skin_combo.SetCurSel(skin_sel);
+
     SetDlgItemText(IDC_GRP_HOTKEYS, tr(L"Hotkeys", L"热键"));
     SetDlgItemText(IDC_LBL_DRAG, tr(L"Drag mode toggle:", L"拖拽模式切换："));
     SetDlgItemText(IDC_LBL_SHOWHIDE, tr(L"Show/Hide:", L"显示/隐藏："));
     SetDlgItemText(IDC_LBL_CYCLE, tr(L"Cycle style:", L"切换样式："));
+    SetDlgItemText(IDC_LBL_CYCLE_SKIN, tr(L"Cycle skin:", L"切换皮肤："));
     SetDlgItemText(IDC_LBL_HOTKEY_HINT, tr(L"Click a box, then press the new key combo (needs Ctrl/Alt/Shift/Win)", L"点击输入框后按新组合键（须含 Ctrl/Alt/Shift/Win）"));
     SetDlgItemText(IDC_GRP_APPEARANCE, tr(L"Appearance", L"外观"));
     SetDlgItemText(IDC_LBL_OPACITY, tr(L"Opacity:", L"透明度："));
     SetDlgItemText(IDC_AUTO_HIDE, tr(L"Auto-hide when stopped", L"停止时自动隐藏"));
     SetDlgItemText(IDC_GRP_STYLE, tr(L"Style", L"样式"));
     SetDlgItemText(IDC_LBL_DEFAULT_STYLE, tr(L"Default style:", L"默认样式："));
+    SetDlgItemText(IDC_GRP_SKIN, tr(L"Skin", L"皮肤"));
+    SetDlgItemText(IDC_LBL_DEFAULT_SKIN, tr(L"Default skin:", L"默认皮肤："));
     SetDlgItemText(IDC_GRP_LANGUAGE, tr(L"Language", L"语言"));
     SetDlgItemText(IDC_LBL_LANGUAGE, tr(L"UI Language:", L"界面语言："));
 }
@@ -345,6 +385,10 @@ LRESULT CMyPreferences::OnHotkeyCaptured(UINT, WPARAM wParam, LPARAM lParam, BOO
         case IDC_HOTKEY_STYLE:
             g_mod = &cfg_guids::hk_style_mod; g_vk = &cfg_guids::hk_style_vk;
             d_mod = DEFAULT_HK_STYLE_MOD; d_vk = DEFAULT_HK_STYLE_VK;
+            break;
+        case IDC_HOTKEY_SKIN:
+            g_mod = &cfg_guids::hk_skin_mod; g_vk = &cfg_guids::hk_skin_vk;
+            d_mod = DEFAULT_HK_SKIN_MOD; d_vk = DEFAULT_HK_SKIN_VK;
             break;
         default:
             return 0;
@@ -373,6 +417,7 @@ bool CMyPreferences::HasChanged()
     cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
 
     CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
     int opacity = slider.GetPos();
@@ -380,10 +425,13 @@ bool CMyPreferences::HasChanged()
     bool auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
     int style = style_combo.GetCurSel();
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    int skin = skin_combo.GetCurSel();
 
     return opacity != (int)cfg_opacity.get_value() ||
            auto_hide != cfg_auto_hide.get() ||
-           (style >= 0 && style != (int)cfg_style.get_value());
+           (style >= 0 && style != (int)cfg_style.get_value()) ||
+           (skin >= 0 && skin != (int)cfg_skin.get_value());
 }
 
 void CMyPreferences::OnChanged()
@@ -409,6 +457,13 @@ void CMyPreferences::apply()
         cfg_style = style;
     }
 
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    int skin = skin_combo.GetCurSel();
+    if (skin >= 0) {
+        cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+        cfg_skin = skin;
+    }
+
     FloatingCloudsWindow::apply_preferences();
     OnChanged();
 }
@@ -424,6 +479,9 @@ void CMyPreferences::reset()
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
     style_combo.SetCurSel(DEFAULT_STYLE);
 
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    skin_combo.SetCurSel(DEFAULT_SKIN);
+
     // Hotkeys -> defaults + re-register
     {
         cfg_var_modern::cfg_int dm(cfg_guids::hk_drag_mod, DEFAULT_HK_DRAG_MOD);
@@ -432,12 +490,16 @@ void CMyPreferences::reset()
         cfg_var_modern::cfg_int vv(cfg_guids::hk_vis_vk, DEFAULT_HK_VIS_VK);
         cfg_var_modern::cfg_int sm(cfg_guids::hk_style_mod, DEFAULT_HK_STYLE_MOD);
         cfg_var_modern::cfg_int sv(cfg_guids::hk_style_vk, DEFAULT_HK_STYLE_VK);
+        cfg_var_modern::cfg_int km(cfg_guids::hk_skin_mod, DEFAULT_HK_SKIN_MOD);
+        cfg_var_modern::cfg_int kv(cfg_guids::hk_skin_vk, DEFAULT_HK_SKIN_VK);
         dm = DEFAULT_HK_DRAG_MOD; dv = DEFAULT_HK_DRAG_VK;
         vm = DEFAULT_HK_VIS_MOD; vv = DEFAULT_HK_VIS_VK;
         sm = DEFAULT_HK_STYLE_MOD; sv = DEFAULT_HK_STYLE_VK;
+        km = DEFAULT_HK_SKIN_MOD; kv = DEFAULT_HK_SKIN_VK;
         m_hk_drag.SetHotkey(DEFAULT_HK_DRAG_MOD, DEFAULT_HK_DRAG_VK);
         m_hk_vis.SetHotkey(DEFAULT_HK_VIS_MOD, DEFAULT_HK_VIS_VK);
         m_hk_style.SetHotkey(DEFAULT_HK_STYLE_MOD, DEFAULT_HK_STYLE_VK);
+        m_hk_skin.SetHotkey(DEFAULT_HK_SKIN_MOD, DEFAULT_HK_SKIN_VK);
         FloatingCloudsWindow::reload_hotkeys();
     }
 

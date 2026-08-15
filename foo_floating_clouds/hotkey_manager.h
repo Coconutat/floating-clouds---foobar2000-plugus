@@ -25,6 +25,7 @@ public:
         ActionToggleDrag,
         ActionToggleVisibility,
         ActionCycleStyle,
+        ActionCycleSkin,
     };
     
     Action handle_hotkey(WPARAM wParam);
@@ -41,6 +42,7 @@ public:
     HotkeyInfo get_drag_hotkey();
     HotkeyInfo get_visibility_hotkey();
     HotkeyInfo get_style_hotkey();
+    HotkeyInfo get_skin_hotkey();
 
 private:
     bool register_single(HWND hwnd, uint32_t id, uint32_t modifiers, uint32_t vk);
@@ -51,6 +53,7 @@ private:
         ID_DRAG = 0x8001,
         ID_VISIBILITY = 0x8002,
         ID_STYLE = 0x8003,
+        ID_SKIN = 0x8004,
     };
 
     struct RegisteredHotkey {
@@ -68,4 +71,6 @@ private:
     cfg_var_modern::cfg_int m_vis_vk;
     cfg_var_modern::cfg_int m_style_mod;
     cfg_var_modern::cfg_int m_style_vk;
+    cfg_var_modern::cfg_int m_skin_mod;
+    cfg_var_modern::cfg_int m_skin_vk;
 };

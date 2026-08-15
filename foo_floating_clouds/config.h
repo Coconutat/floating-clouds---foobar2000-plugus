@@ -19,6 +19,10 @@ namespace cfg_guids {
     // Style
     static const GUID current_style = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x05 } };
 
+    // Skin
+    static const GUID current_skin = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x18 } };
+    static const GUID color_mode = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1B } };
+
     // Hotkeys - modifier keys (MOD_ALT | MOD_CONTROL etc)
     static const GUID hk_drag_mod = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x10 } };
     static const GUID hk_drag_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x11 } };
@@ -26,6 +30,8 @@ namespace cfg_guids {
     static const GUID hk_vis_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x13 } };
     static const GUID hk_style_mod = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x14 } };
     static const GUID hk_style_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x15 } };
+    static const GUID hk_skin_mod = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x19 } };
+    static const GUID hk_skin_vk = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1A } };
 
     // Localization
     static const GUID language = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x16 } };
@@ -45,6 +51,21 @@ enum class FloatingStyle : int32_t {
     Count = 6
 };
 
+// Visual skin (material system), orthogonal to FloatingStyle (layout).
+enum class FloatingSkin : int32_t {
+    MD3 = 0,      // current Material 3 dark look (default)
+    Apple = 1,    // Apple Design: dark liquid glass + system blue
+    Count = 2
+};
+
+// Color mode: whether the skin uses its dark or light token set.
+enum class FloatingColorMode : int32_t {
+    Follow = 0,   // follow foobar2000 dark/light setting (default)
+    Dark = 1,
+    Light = 2,
+    Count = 3
+};
+
 // Hotkey defaults (all customizable in Preferences > Components > Floating Clouds)
 // Note: RegisterHotKey requires at least one modifier.
 constexpr uint32_t DEFAULT_HK_DRAG_MOD = MOD_CONTROL | MOD_ALT;
@@ -53,11 +74,15 @@ constexpr uint32_t DEFAULT_HK_VIS_MOD = MOD_CONTROL | MOD_ALT;
 constexpr uint32_t DEFAULT_HK_VIS_VK = 'F';
 constexpr uint32_t DEFAULT_HK_STYLE_MOD = MOD_CONTROL | MOD_ALT;
 constexpr uint32_t DEFAULT_HK_STYLE_VK = 'S';
+constexpr uint32_t DEFAULT_HK_SKIN_MOD = MOD_CONTROL | MOD_ALT;
+constexpr uint32_t DEFAULT_HK_SKIN_VK = 'T';
 
 // Default values
 constexpr int32_t DEFAULT_OPACITY = 220;
 constexpr bool DEFAULT_AUTO_HIDE = true;
 constexpr int32_t DEFAULT_STYLE = static_cast<int32_t>(FloatingStyle::Full);
+constexpr int32_t DEFAULT_SKIN = static_cast<int32_t>(FloatingSkin::MD3);
+constexpr int32_t DEFAULT_COLOR_MODE = static_cast<int32_t>(FloatingColorMode::Follow);
 constexpr int32_t DEFAULT_LANGUAGE = 0; // 0 = English, 1 = Chinese
 
 // Window styles (regular vs extended styles must not be mixed)

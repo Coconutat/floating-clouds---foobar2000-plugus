@@ -89,8 +89,15 @@ void TrayIcon::show_context_menu()
         AppendMenu(style_menu, MF_STRING, 1001 + i, tr_style(static_cast<FloatingStyle>(i)));
         if (i == 2) AppendMenu(style_menu, MF_SEPARATOR, 0, NULL); // group core vs extended styles
     }
-    
     AppendMenu(menu, MF_POPUP, (UINT_PTR)style_menu, tr(L"Style", L"样式"));
+
+    // Skin submenu (localized)
+    HMENU skin_menu = CreatePopupMenu();
+    for (int i = 0; i < (int)FloatingSkin::Count; i++) {
+        AppendMenu(skin_menu, MF_STRING, 3001 + i, tr_skin(static_cast<FloatingSkin>(i)));
+    }
+    AppendMenu(menu, MF_POPUP, (UINT_PTR)skin_menu, tr(L"Skin", L"皮肤"));
+
     AppendMenu(menu, MF_SEPARATOR, 0, NULL);
     AppendMenu(menu, MF_STRING, 2001, m_window->is_visible() ? tr(L"Hide", L"隐藏") : tr(L"Show", L"显示"));
     AppendMenu(menu, MF_STRING, 2002, tr(L"Exit", L"退出"));
@@ -103,12 +110,16 @@ void TrayIcon::show_context_menu()
     int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, m_parent_hwnd, NULL);
     
     DestroyMenu(style_menu);
+    DestroyMenu(skin_menu);
     DestroyMenu(menu);
     
     // Handle command
     if (cmd >= 1001 && cmd <= 1008) {
         FloatingStyle style = static_cast<FloatingStyle>(cmd - 1001);
         m_window->set_style(style);
+    } else if (cmd >= 3001 && cmd <= 3002) {
+        FloatingSkin skin = static_cast<FloatingSkin>(cmd - 3001);
+        m_window->set_skin(skin);
     } else if (cmd == 2001) {
         m_window->toggle_visibility();
     } else if (cmd == 2002) {
