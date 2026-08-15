@@ -33,3 +33,13 @@ inline const wchar_t* tr_style(FloatingStyle s)
         default: return L"";
     }
 }
+
+// Localized name of a skin.
+inline const wchar_t* tr_skin(FloatingSkin s)
+{
+    switch (s) {
+        case FloatingSkin::MD3: return tr(L"Material 3", L"Material 3");
+        case FloatingSkin::Apple: return tr(L"Apple (Liquid Glass)", L"Apple（液态玻璃）");
+        default: return L"";
+    }
+}

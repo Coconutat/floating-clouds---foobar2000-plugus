@@ -77,6 +77,15 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
         m_current_style = static_cast<FloatingStyle>(migrate_style(saved));
         if ((int)m_current_style != saved) cfg_style = (int)m_current_style;
     }
+    // Apply the saved skin (0 = MD3 default, 1 = Apple).
+    {
+        cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+        int saved = (int)cfg_skin.get_value();
+        FloatingSkin sk = (saved >= 0 && saved < (int)FloatingSkin::Count)
+            ? static_cast<FloatingSkin>(saved) : static_cast<FloatingSkin>(DEFAULT_SKIN);
+        if ((int)sk != saved) cfg_skin = (int)sk;
+        D2DRenderer::set_skin(sk);
+    }
     
     SetWindowPos(NULL, x, y, size.cx, size.cy, SWP_NOZORDER | SWP_SHOWWINDOW);
     
@@ -134,6 +143,15 @@ void FloatingCloudsWindow::apply_preferences()
     } else {
         s_instance->Invalidate();
     }
+
+    // Skin: switch if changed (hot reload from Preferences / tray).
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    int sv = (int)cfg_skin.get_value();
+    FloatingSkin sk = (sv >= 0 && sv < (int)FloatingSkin::Count)
+        ? static_cast<FloatingSkin>(sv) : static_cast<FloatingSkin>(DEFAULT_SKIN);
+    if (sk != s_instance->get_skin()) {
+        s_instance->set_skin(sk);
+    }
 }
 
 bool FloatingCloudsWindow::render_now()
@@ -157,7 +175,7 @@ bool FloatingCloudsWindow::render_now()
         D2D1_RECT_F card = D2D1::RectF((float)SHADOW_INSET, (float)SHADOW_INSET,
                                        (float)rc.Width() - (float)SHADOW_INSET,
                                        (float)rc.Height() - (float)SHADOW_INSET);
-        draw_surface_card(card, (float)WINDOW_CORNER_RADIUS);
+        draw_surface_card(card, skin().corner_card);
     } else {
         // Uniform-alpha fallback: opaque surface (per-pixel alpha is ignored).
         clear_background(m_anim_opacity * 0.6f);
@@ -377,6 +395,9 @@ LRESULT FloatingCloudsWindow::OnHotKey(UINT msg, WPARAM wParam, LPARAM lParam, B
         case HotkeyManager::ActionCycleStyle:
             cycle_style();
             break;
+        case HotkeyManager::ActionCycleSkin:
+            cycle_skin();
+            break;
     }
     return 0;
 }
@@ -506,10 +527,10 @@ void FloatingCloudsWindow::on_anim_tick()
     if (fabsf(nl - m_anim_lift) > 0.01f) changed = true;
     m_anim_lift = nl;
 
-    // Button MD3 state layers (plan 001): ease each toward its target.
+    // Button state layers (plan 001): ease each toward its target.
     for (int i = 0; i < BUTTON_COUNT; i++) {
-        const float tgt = (m_pressed_button == i) ? md3::pressed_state
-                        : (m_hover_button == i)  ? md3::hover_state : 0.0f;
+        const float tgt = (m_pressed_button == i) ? skin().pressed_state
+                        : (m_hover_button == i)  ? skin().hover_state : 0.0f;
         const float nv = approach_dt(m_button_state_layer[i], tgt, 0.08f, dtc);
         if (fabsf(nv - m_button_state_layer[i]) > 0.0005f) changed = true;
         m_button_state_layer[i] = nv;
@@ -574,6 +595,29 @@ void FloatingCloudsWindow::set_style(FloatingStyle style)
         start_anim_timer();
     }
     
+    Invalidate();
+}
+
+void FloatingCloudsWindow::cycle_skin()
+{
+    int32_t next = (static_cast<int32_t>(get_skin()) + 1) % static_cast<int32_t>(FloatingSkin::Count);
+    set_skin(static_cast<FloatingSkin>(next));
+}
+
+void FloatingCloudsWindow::set_skin(FloatingSkin skin)
+{
+    // Rebuild per-skin renderer resources (shadow, specular brush, fonts).
+    D2DRenderer::set_skin(skin);
+
+    // Save skin preference
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    cfg_skin = static_cast<int32_t>(skin);
+
+    // Keep the playlist panel on the same skin.
+    if (m_playlist_panel && m_playlist_panel->IsWindow()) {
+        m_playlist_panel->set_skin(skin);
+    }
+
     Invalidate();
 }
 

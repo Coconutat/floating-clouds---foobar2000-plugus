@@ -47,13 +47,13 @@ void StyleRenderer::render_full(const CSize& size)
     pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
     m_renderer->draw_text(wtitle, text_x, y, avail_w, 20,
                           m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.95f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface, 0.95f));
     y += 22;
     
     pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
     m_renderer->draw_text(wartist, text_x, y, avail_w, 16,
                           m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.85f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
     y += 20;
     
     float progress = m_window->get_display_progress();
@@ -61,8 +61,8 @@ void StyleRenderer::render_full(const CSize& size)
     // below the artist line (`y` is the render cursor after the artist).
     float pb_y = y + 4.0f;
     m_renderer->draw_progress_bar(text_x, pb_y, avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
-                                  D2DRenderer::hex(md3::primary, 0.9f),
-                                  D2DRenderer::hex(md3::on_surface_variant, 0.25f));
+                                  D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
+                                  D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
     
     // Control buttons: prev, play/pause, next, mute
     draw_button_row(size);
@@ -90,11 +90,11 @@ void StyleRenderer::draw_button_row(const CSize& size)
         float state_alpha = m_window->get_button_state_layer(i);
 
         // Icon color: playing play/pause -> primary; muted volume -> error.
-        D2D1_COLOR_F icon_color = D2DRenderer::hex(md3::on_surface_variant, 0.95f);
+        D2D1_COLOR_F icon_color = D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.95f);
         if (i == 1 && m_window->is_playing() && !m_window->is_paused()) {
-            icon_color = D2DRenderer::hex(md3::primary, 1.0f);
+            icon_color = D2DRenderer::hex(m_renderer->skin().primary, 1.0f);
         } else if (i == 3 && m_window->is_volume_muted()) {
-            icon_color = D2DRenderer::hex(md3::error, 1.0f);
+            icon_color = D2DRenderer::hex(m_renderer->skin().error, 1.0f);
         }
 
         m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, icons[i], active[i],
@@ -129,12 +129,12 @@ void StyleRenderer::render_minimal(const CSize& size)
     const float text_y = card_top + ((bar_y - 4.0f - card_top) - text_h) / 2.0f;
     m_renderer->draw_text(wdisplay, pad + inset, text_y, avail_w, text_h,
                           m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.95f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface, 0.95f));
     
     float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad + inset, bar_y, avail_w, bar_h, progress,
-                                  D2DRenderer::hex(md3::primary, 0.9f),
-                                  D2DRenderer::hex(md3::on_surface_variant, 0.25f));
+                                  D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
+                                  D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
 }
 
 void StyleRenderer::render_album_focus(const CSize& size)
@@ -155,20 +155,20 @@ void StyleRenderer::render_album_focus(const CSize& size)
     pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
     m_renderer->draw_text(wtitle, pad, info_y, avail_w, 22,
                           m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.95f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface, 0.95f));
     
     float info_y2 = info_y + 24;
     pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
     m_renderer->draw_text(wartist, pad, info_y2, avail_w, 18,
                           m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.85f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
     
     // Progress bar groups with the track info (plan 09): just below the artist.
     float progress = m_window->get_display_progress();
     float pb_y = info_y2 + 18 + 6;
     m_renderer->draw_progress_bar(art_x, pb_y, art_size, (float)PROGRESS_BAR_HEIGHT, progress,
-                                  D2DRenderer::hex(md3::primary, 0.9f),
-                                  D2DRenderer::hex(md3::on_surface_variant, 0.25f));
+                                  D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
+                                  D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
 
     draw_button_row(size);
 }
@@ -184,8 +184,8 @@ void StyleRenderer::render_progress_ring(const CSize& size)
     float progress = m_window->get_display_progress();
     
     m_renderer->draw_progress_ring(cx, cy, ring_radius, ring_thickness, progress,
-                                   D2DRenderer::hex(md3::primary, 0.9f),
-                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
+                                   D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
+                                   D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
     
     m_renderer->draw_album_art(cx - art_size/2, cy - art_size/2, art_size, m_window->get_album_art());
     
@@ -195,12 +195,12 @@ void StyleRenderer::render_progress_ring(const CSize& size)
     pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
     m_renderer->draw_text(wtitle, (float)WINDOW_PADDING, text_y, avail_w, 18,
                           m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface, 0.95f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface, 0.95f));
     
     pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
     m_renderer->draw_text(wartist, (float)WINDOW_PADDING, text_y + 20, avail_w, 16,
                           m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.85f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
 
     draw_button_row(size);
 }
@@ -237,8 +237,8 @@ void StyleRenderer::render_visualizer(const CSize& size)
 
         float intensity = (float)i / bar_count;
         // MD3 accent ramp: primary (lavender) -> tertiary (pink)
-        const uint32_t c1 = md3::primary;
-        const uint32_t c2 = md3::tertiary;
+        const uint32_t c1 = m_renderer->skin().primary;
+        const uint32_t c2 = m_renderer->skin().tertiary;
         float r = (float)((c1 >> 16) & 0xFF) * (1.0f - intensity) + (float)((c2 >> 16) & 0xFF) * intensity;
         float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
         float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
@@ -261,7 +261,7 @@ void StyleRenderer::render_visualizer(const CSize& size)
     pfc::stringcvt::string_wide_from_utf8 wdisplay(display);
     m_renderer->draw_text(wdisplay, pad, text_y, avail_w, 16,
                           m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.85f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
 
     draw_button_row(size);
 }
@@ -274,12 +274,12 @@ void StyleRenderer::render_lyrics_line(const CSize& size)
     pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
     m_renderer->draw_text(wtitle, pad, pad, avail_w, 18,
                           m_renderer->get_title_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.7f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.7f));
     
     pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
     m_renderer->draw_text(wartist, pad, pad + 20, avail_w, 14,
                           m_renderer->get_artist_format(),
-                          D2DRenderer::hex(md3::on_surface_variant, 0.5f));
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.5f));
     
     float lyrics_y = (float)size.cy / 2 - 12;
     const char* lyric = m_window->get_current_lyric_line();
@@ -287,16 +287,16 @@ void StyleRenderer::render_lyrics_line(const CSize& size)
         pfc::stringcvt::string_wide_from_utf8 wlyric(lyric);
         m_renderer->draw_text(wlyric, pad, lyrics_y, avail_w, 24,
                               m_renderer->get_title_format(),
-                              D2DRenderer::hex(md3::on_surface, 0.9f));
+                              D2DRenderer::hex(m_renderer->skin().on_surface, 0.9f));
     } else {
         m_renderer->draw_text(L"\u266B  Now Playing  \u266B", pad, lyrics_y, avail_w, 24,
                               m_renderer->get_title_format(),
-                              D2DRenderer::hex(md3::on_surface, 0.9f));
+                              D2DRenderer::hex(m_renderer->skin().on_surface, 0.9f));
     }
     
     float progress = m_window->get_display_progress();
     m_renderer->draw_progress_bar(pad, (float)size.cy - pad - PROGRESS_BAR_HEIGHT,
                                    avail_w, (float)PROGRESS_BAR_HEIGHT, progress,
-                                   D2DRenderer::hex(md3::primary, 0.9f),
-                                   D2DRenderer::hex(md3::on_surface_variant, 0.25f));
+                                   D2DRenderer::hex(m_renderer->skin().primary, 0.9f),
+                                   D2DRenderer::hex(m_renderer->skin().progress_track, m_renderer->skin().progress_track_alpha));
 }

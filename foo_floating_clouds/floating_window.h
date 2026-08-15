@@ -79,6 +79,10 @@ public:
     
     // Set a specific style
     void set_style(FloatingStyle style);
+
+    // Set a specific skin (material system) / cycle to next skin
+    void set_skin(FloatingSkin skin);
+    void cycle_skin();
     
     // Update playback info (called from playback listener)
     void on_playback_new_track(const char* title, const char* artist, const char* album, 

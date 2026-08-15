@@ -9,9 +9,9 @@
 namespace {
 // Corner radius for album art, scaled to the display size (plan 011 follow-up):
 // size/16 is just enough rounding to see on small thumbnails; large hero art
-// keeps the surface card radius (16).
-float art_corner_radius(float size) {
-    return (std::min)((float)WINDOW_CORNER_RADIUS, (std::max)(4.0f, size * 0.003125f)); // 1/32
+// keeps the surface card radius (per-skin corner_card).
+float art_corner_radius(float size, float card_corner) {
+    return (std::min)(card_corner, (std::max)(4.0f, size * 0.003125f)); // 1/32
 }
 } // namespace
 
@@ -59,6 +59,7 @@ void D2DRenderer::release_resources()
 {
     // ULW per-pixel-alpha path
     if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
+    if (m_shadow_contact_bitmap) { m_shadow_contact_bitmap->Release(); m_shadow_contact_bitmap = nullptr; }
     if (m_ulw_target) { m_ulw_target->Release(); m_ulw_target = nullptr; }
     if (m_dib) { DeleteObject(m_dib); m_dib = nullptr; }
     if (m_mem_dc) { DeleteDC(m_mem_dc); m_mem_dc = nullptr; }
@@ -68,6 +69,7 @@ void D2DRenderer::release_resources()
     m_render_target = nullptr;
     // Shared resources
     if (m_brush) { m_brush->Release(); m_brush = nullptr; }
+    release_glass_brushes();
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
     if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
@@ -186,12 +188,27 @@ bool D2DRenderer::create_shadow()
 {
     if (!m_ulw_target || !m_dib_bits) return false;
 
+    if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
+    if (m_shadow_contact_bitmap) { m_shadow_contact_bitmap->Release(); m_shadow_contact_bitmap = nullptr; }
+
+    const SkinTokens& t = skin();
+    bool ok = build_shadow_bitmap(t.shadow_alpha, t.shadow_blur, &m_shadow_bitmap);
+    if (ok && t.shadow_contact_alpha > 0.0f) {
+        ok = build_shadow_bitmap(t.shadow_contact_alpha, t.shadow_contact_blur, &m_shadow_contact_bitmap);
+    }
+    return ok;
+}
+
+bool D2DRenderer::build_shadow_bitmap(float alpha, int blur, ID2D1Bitmap** out_bitmap)
+{
+    if (!out_bitmap || alpha <= 0.0f) return true;
+
     const int w = m_dib_size.cx;
     const int h = m_dib_size.cy;
-    if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
-
-    const float r = (float)WINDOW_CORNER_RADIUS;
-    const int inset = SHADOW_INSET;
+    const SkinTokens& t = skin();
+    const int inset = (int)t.shadow_inset;
+    const float r = effective_corner(t.corner_card,
+        D2D1::RectF((float)inset, (float)inset, (float)(w - inset), (float)(h - inset)));
     const int x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
 
     // Rasterize the rounded-card alpha into a CPU buffer.
@@ -205,9 +222,10 @@ bool D2DRenderer::create_shadow()
         }
     }
 
-    // Separable box blur (3 passes, radius 5) for a soft shadow.
+    // Separable box blur (3 passes) for a soft shadow.
     std::vector<uint8_t> tmp((size_t)w * h), tmp2((size_t)w * h);
     auto blur_h = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
+        if (rad <= 0) { dst = src; return; }
         for (int y = 0; y < h; y++) {
             long acc = 0;
             const size_t row = (size_t)y * w;
@@ -224,6 +242,7 @@ bool D2DRenderer::create_shadow()
         }
     };
     auto blur_v = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
+        if (rad <= 0) { dst = src; return; }
         for (int x = 0; x < w; x++) {
             long acc = 0;
             for (int y = -rad; y <= rad; y++) {
@@ -239,20 +258,20 @@ bool D2DRenderer::create_shadow()
         }
     };
     for (int pass = 0; pass < 3; pass++) {
-        blur_h(a, tmp, 5);
-        blur_v(tmp, tmp2, 5);
+        blur_h(a, tmp, blur);
+        blur_v(tmp, tmp2, blur);
         a.swap(tmp2);
     }
 
-    // Upload as a premultiplied black bitmap (RGB=0, A = blurred alpha * 0.4).
+    // Upload as a premultiplied black bitmap (RGB=0, A = blurred alpha * strength).
     std::vector<uint32_t> px((size_t)w * h);
     for (size_t i = 0; i < (size_t)w * h; i++) {
-        px[i] = (uint32_t)(a[i] * 0.40f) << 24; // B8G8R8A8: alpha in the high byte
+        px[i] = (uint32_t)(a[i] * alpha) << 24; // B8G8R8A8: alpha in the high byte
     }
     HRESULT hr = m_ulw_target->CreateBitmap(D2D1::SizeU((UINT)w, (UINT)h), px.data(),
         (UINT)w * 4,
         D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
-        &m_shadow_bitmap);
+        out_bitmap);
     return SUCCEEDED(hr);
 }
 
@@ -326,9 +345,9 @@ void D2DRenderer::clear_background(float opacity)
         // are drawn by draw_surface_card.
         m_render_target->Clear(D2D1::ColorF(0, 0, 0, 0));
     } else {
-        // Uniform-alpha fallback: per-pixel alpha is ignored, so paint the MD3
-        // surface-container tone here (LWA_ALPHA applies the window opacity).
-        m_render_target->Clear(D2DRenderer::hex(md3::surface_container, opacity));
+        // Uniform-alpha fallback: per-pixel alpha is ignored, so paint the
+        // skin's opaque surface tone here (LWA_ALPHA applies the window opacity).
+        m_render_target->Clear(D2DRenderer::hex(skin().surface, opacity));
     }
 }
 
@@ -336,6 +355,55 @@ void D2DRenderer::set_global_opacity(float opacity)
 {
     // ULW applies the opacity at present time (per-pixel multiply in end_draw).
     m_global_opacity = opacity;
+}
+
+void D2DRenderer::set_skin(FloatingSkin skin)
+{
+    if (m_skin == skin) return;
+    m_skin = skin;
+
+    // Per-skin resources: shadow bitmaps, glass gradient brushes, cached fonts.
+    release_glass_brushes();
+    if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
+    if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
+    if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
+    if (m_small_left_format) { m_small_left_format->Release(); m_small_left_format = nullptr; }
+    if (m_mode == PresentMode::ULW) {
+        create_shadow();
+    }
+    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Apple ? "Apple" : "MD3");
+}
+
+void D2DRenderer::release_glass_brushes()
+{
+    if (m_glass_fill_brush) { m_glass_fill_brush->Release(); m_glass_fill_brush = nullptr; }
+    if (m_glass_fill_stops) { m_glass_fill_stops->Release(); m_glass_fill_stops = nullptr; }
+    if (m_specular_brush) { m_specular_brush->Release(); m_specular_brush = nullptr; }
+    if (m_specular_stops) { m_specular_stops->Release(); m_specular_stops = nullptr; }
+    if (m_glass_stroke_brush) { m_glass_stroke_brush->Release(); m_glass_stroke_brush = nullptr; }
+    if (m_glass_stroke_stops) { m_glass_stroke_stops->Release(); m_glass_stroke_stops = nullptr; }
+}
+
+void D2DRenderer::ensure_gradient_brush(
+    ID2D1LinearGradientBrush** brush,
+    ID2D1GradientStopCollection** stops,
+    const D2D1_POINT_2F& p0, const D2D1_POINT_2F& p1,
+    const D2D1_GRADIENT_STOP* gradient_stops, UINT32 count)
+{
+    if (!m_render_target || *brush) return;
+    CComPtr<ID2D1GradientStopCollection> sc;
+    if (SUCCEEDED(m_render_target->CreateGradientStopCollection(
+            gradient_stops, count, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &sc))) {
+        m_render_target->CreateLinearGradientBrush(
+            D2D1::LinearGradientBrushProperties(p0, p1), sc, brush);
+        *stops = sc.Detach();
+    }
+}
+
+float D2DRenderer::effective_corner(float radius, const D2D1_RECT_F& rect) const
+{
+    const float half = (std::min)(rect.right - rect.left, rect.bottom - rect.top) * 0.5f;
+    return (std::min)(radius, half);
 }
 
 bool D2DRenderer::debug_enabled()
@@ -368,15 +436,75 @@ void D2DRenderer::log_present_summary()
 void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
 {
     if (m_mode == PresentMode::ULW) {
-        // Elevation shadow: CPU box-blurred bitmap, drawn once per frame.
+        const SkinTokens& t = skin();
+        const float r = effective_corner(radius, rect);
+
+        // Elevation: contact shadow first (tight, darker), then the wide
+        // soft ambient shadow. Both are CPU box-blurred bitmaps.
+        if (m_shadow_contact_bitmap) {
+            m_render_target->DrawBitmap(m_shadow_contact_bitmap,
+                D2D1::RectF(0, 0, (float)m_dib_size.cx, (float)m_dib_size.cy),
+                1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
         if (m_shadow_bitmap) {
             m_render_target->DrawBitmap(m_shadow_bitmap,
                 D2D1::RectF(0, 0, (float)m_dib_size.cx, (float)m_dib_size.cy),
                 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
-        m_brush->SetColor(D2DRenderer::hex(md3::surface_container, 1.0f));
-        m_render_target->FillRoundedRectangle(
-            D2D1::RoundedRect(rect, radius, radius), m_brush);
+
+        // Glass path (Apple): vertical gradient fill (lit top -> deeper
+        // bottom) + specular bloom + gradient hairline rim. A flat tint
+        // reads as "black transparent glass"; gradients read as a material.
+        if (t.glass_stroke_top_alpha > 0.0f || t.glass_specular_alpha > 0.0f) {
+            // 1) Glass fill gradient, top -> bottom.
+            D2D1_GRADIENT_STOP fill_stops[2] = {
+                { 0.0f, D2DRenderer::hex(t.glass_fill_top, t.glass_fill_top_alpha) },
+                { 1.0f, D2DRenderer::hex(t.glass_fill_bottom, t.glass_fill_bottom_alpha) },
+            };
+            ensure_gradient_brush(&m_glass_fill_brush, &m_glass_fill_stops,
+                D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
+                fill_stops, 2);
+            if (m_glass_fill_brush) {
+                m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_glass_fill_brush);
+            }
+
+            // 2) Specular bloom: bright just below the top edge, fading out
+            //    by glass_specular_stop of the card height.
+            if (t.glass_specular_alpha > 0.0f) {
+                D2D1_GRADIENT_STOP spec_stops[2] = {
+                    { 0.0f, D2DRenderer::hex(t.glass_specular, t.glass_specular_alpha) },
+                    { t.glass_specular_stop, D2DRenderer::hex(t.glass_specular, 0.0f) },
+                };
+                ensure_gradient_brush(&m_specular_brush, &m_specular_stops,
+                    D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
+                    spec_stops, 2);
+                if (m_specular_brush) {
+                    m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_specular_brush);
+                }
+            }
+
+            // 3) Rim: a soft outer halo (edge bloom) plus a gradient
+            //    hairline — bright at the light-catching top edge, nearly
+            //    gone at the bottom (fake edge refraction).
+            m_brush->SetColor(D2DRenderer::hex(0xFFFFFF, 0.06f));
+            m_render_target->DrawRoundedRectangle(D2D1::RoundedRect(rect, r, r),
+                m_brush, t.glass_stroke_width + 1.5f, m_round_stroke);
+            D2D1_GRADIENT_STOP stroke_stops[2] = {
+                { 0.0f, D2DRenderer::hex(t.glass_stroke_top, t.glass_stroke_top_alpha) },
+                { 1.0f, D2DRenderer::hex(t.glass_stroke_bottom, t.glass_stroke_bottom_alpha) },
+            };
+            ensure_gradient_brush(&m_glass_stroke_brush, &m_glass_stroke_stops,
+                D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
+                stroke_stops, 2);
+            if (m_glass_stroke_brush) {
+                m_render_target->DrawRoundedRectangle(D2D1::RoundedRect(rect, r, r),
+                    m_glass_stroke_brush, t.glass_stroke_width, m_round_stroke);
+            }
+        } else {
+            // Opaque card (MD3).
+            m_brush->SetColor(D2DRenderer::hex(t.surface, 1.0f));
+            m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_brush);
+        }
     }
     // Hwnd fallback: clear_background already filled the opaque surface.
 }
@@ -575,7 +703,7 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
                                 UINT aw = 0, ah = 0;
                                 converter->GetSize(&aw, &ah);
                                 std::vector<uint32_t> buf((size_t)aw * ah);
-                                const float r = art_corner_radius((float)((std::min)(aw, ah)));
+                                const float r = art_corner_radius((float)((std::min)(aw, ah)), skin().corner_card);
                                 const UINT rr = (UINT)(r * 2.0f);
                                 if (aw >= rr && ah >= rr &&
                                     SUCCEEDED(converter->CopyPixels(NULL, aw * 4, aw * ah * 4,
@@ -632,10 +760,11 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
                                     1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     } else {
         // Draw placeholder (music note icon as simple colored rect)
-        m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 0.9f));
+        m_brush->SetColor(D2DRenderer::hex(skin().surface_high, 0.9f));
         m_render_target->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(x, y, x + size, y + size),
-                              art_corner_radius(size), art_corner_radius(size)), m_brush);
+                              art_corner_radius(size, skin().corner_card),
+                              art_corner_radius(size, skin().corner_card)), m_brush);
     }
 }
 
@@ -648,22 +777,24 @@ void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_
 
     // Press feedback (plan 001): shrink toward the button center, driven by the
     // eased pressed-state layer so the scale animates with the state layer.
+    // 0.96 is the tactile sweet spot (better-ui: never below 0.95).
     const bool pressed = (state >= 2);
-    const float scale = pressed ? 1.0f - 0.03f * (state_alpha / md3::pressed_state) : 1.0f;
+    const float scale = pressed ? 1.0f - 0.04f * (state_alpha / skin().pressed_state) : 1.0f;
     const float rr = radius * scale;
 
-    // Circle background (MD3 icon-button tonal fill)
+    // Circle background (skin tonal fill)
+    const SkinTokens& t = skin();
     D2D1_COLOR_F bg_color = is_active ? 
-        D2DRenderer::hex(md3::primary, 0.20f) : 
-        D2DRenderer::hex(md3::on_surface_variant, 0.12f);
+        D2DRenderer::hex(t.button_fill_active, t.button_fill_active_alpha) : 
+        D2DRenderer::hex(t.button_fill, t.button_fill_alpha);
     
     m_brush->SetColor(bg_color);
     m_render_target->FillEllipse(
         D2D1::Ellipse(D2D1::Point2F(cx, cy), rr, rr), m_brush);
 
-    // MD3 state layer: hover 8% / pressed 12% on-surface overlay, eased.
+    // Skin state layer: hover/pressed on-surface overlay, eased.
     if (state_alpha > 0.001f) {
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, state_alpha));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface, state_alpha));
         m_render_target->FillEllipse(
             D2D1::Ellipse(D2D1::Point2F(cx, cy), rr, rr), m_brush);
     }
@@ -750,7 +881,7 @@ IDWriteTextFormat* D2DRenderer::get_text_format(float size, DWRITE_FONT_WEIGHT w
 IDWriteTextFormat* D2DRenderer::get_title_format()
 {
     if (!m_title_format) {
-        m_title_format = get_text_format(14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        m_title_format = get_text_format(skin().title_size, DWRITE_FONT_WEIGHT_SEMI_BOLD);
         if (m_title_format) {
             m_title_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             m_title_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
@@ -762,7 +893,7 @@ IDWriteTextFormat* D2DRenderer::get_title_format()
 IDWriteTextFormat* D2DRenderer::get_artist_format()
 {
     if (!m_artist_format) {
-        m_artist_format = get_text_format(11.0f, DWRITE_FONT_WEIGHT_NORMAL);
+        m_artist_format = get_text_format(skin().artist_size, DWRITE_FONT_WEIGHT_NORMAL);
         if (m_artist_format) {
             m_artist_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             m_artist_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
@@ -774,7 +905,7 @@ IDWriteTextFormat* D2DRenderer::get_artist_format()
 IDWriteTextFormat* D2DRenderer::get_small_format()
 {
     if (!m_small_format) {
-        m_small_format = get_text_format(10.0f, DWRITE_FONT_WEIGHT_NORMAL);
+        m_small_format = get_text_format(skin().small_size, DWRITE_FONT_WEIGHT_NORMAL);
         if (m_small_format) {
             m_small_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
             m_small_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -786,7 +917,7 @@ IDWriteTextFormat* D2DRenderer::get_small_format()
 IDWriteTextFormat* D2DRenderer::get_small_left_format()
 {
     if (!m_small_left_format) {
-        m_small_left_format = get_text_format(10.0f, DWRITE_FONT_WEIGHT_NORMAL);
+        m_small_left_format = get_text_format(skin().small_size, DWRITE_FONT_WEIGHT_NORMAL);
         if (m_small_left_format) {
             m_small_left_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             m_small_left_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);

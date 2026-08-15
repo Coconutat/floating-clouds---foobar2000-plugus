@@ -35,7 +35,7 @@ IDI_ICON1               ICON                    "floating_clouds.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Preferences dialog
-IDD_PREFERENCES DIALOGEX 0, 0, 332, 252
+IDD_PREFERENCES DIALOGEX 0, 0, 332, 304
 STYLE DS_SETFONT | WS_CHILD
 FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
 BEGIN
@@ -46,6 +46,8 @@ BEGIN
     EDITTEXT        IDC_HOTKEY_VISIBILITY,252,18,60,12,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "Cycle style:",IDC_LBL_CYCLE,16,36,52,8
     EDITTEXT        IDC_HOTKEY_STYLE,96,34,80,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Cycle skin:",IDC_LBL_CYCLE_SKIN,200,36,48,8
+    EDITTEXT        IDC_HOTKEY_SKIN,252,34,60,12,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "Click a box, then press the new key combo (needs Ctrl/Alt/Shift/Win)",IDC_LBL_HOTKEY_HINT,16,52,300,8
 
     GROUPBOX        "Appearance",IDC_GRP_APPEARANCE,8,72,316,68
@@ -59,8 +61,12 @@ BEGIN
     LTEXT           "Default style:",IDC_LBL_DEFAULT_STYLE,16,156,56,8
     COMBOBOX        IDC_DEFAULT_STYLE,80,154,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
 
-    GROUPBOX        "Language",IDC_GRP_LANGUAGE,8,192,316,52
-    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,16,208,52,8
-    COMBOBOX        IDC_LANGUAGE,80,206,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    GROUPBOX        "Skin",IDC_GRP_SKIN,8,192,316,48
+    LTEXT           "Default skin:",IDC_LBL_DEFAULT_SKIN,16,208,56,8
+    COMBOBOX        IDC_SKIN,80,206,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+
+    GROUPBOX        "Language",IDC_GRP_LANGUAGE,8,244,316,52
+    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,16,260,52,8
+    COMBOBOX        IDC_LANGUAGE,80,258,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
 END
 #endif

@@ -142,19 +142,20 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     if (ulw) {
         clear_background(0.0f);
         draw_surface_card(D2D1::RectF(inset, inset, W - inset, (float)m_size.cy - inset),
-                          (float)WINDOW_CORNER_RADIUS);
+                          skin().corner_card);
     } else {
         clear_background(1.0f);
     }
 
     // Header background (rounded top corners in ULW mode to follow the card)
-    m_brush->SetColor(D2DRenderer::hex(md3::surface_container_high, 1.0f));
+    m_brush->SetColor(D2DRenderer::hex(skin().surface_high, 1.0f));
     if (ulw) {
+        const float hdr_r = (std::min)(skin().corner_card, hdr_h * 0.5f);
         m_render_target->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(inset, hdr_y, W - inset, hdr_y + hdr_h),
-                              (float)WINDOW_CORNER_RADIUS, (float)WINDOW_CORNER_RADIUS), m_brush);
+                              hdr_r, hdr_r), m_brush);
         m_render_target->FillRectangle(
-            D2D1::RectF(inset, hdr_y + (float)WINDOW_CORNER_RADIUS, W - inset, hdr_y + hdr_h), m_brush);
+            D2D1::RectF(inset, hdr_y + hdr_r, W - inset, hdr_y + hdr_h), m_brush);
     } else {
         m_render_target->FillRectangle(D2D1::RectF(0, 0, W, hdr_h), m_brush);
     }
@@ -176,7 +177,7 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     const float tx = title_left + (std::max)(0.0f, (title_right - title_left - tw) / 2.0f);
     const float font_size = get_title_format()->GetFontSize();
     const float ty = hdr_y + (hdr_h - font_size) / 2.0f - 1.0f;
-    m_brush->SetColor(D2DRenderer::hex(md3::on_surface, 0.95f));
+    m_brush->SetColor(D2DRenderer::hex(skin().on_surface, 0.95f));
     D2D1_RECT_F title_rect = D2D1::RectF(tx, ty, title_right, ty + font_size + 4.0f);
     m_render_target->DrawText(title, (UINT32)wcslen(title), get_title_format(), title_rect, m_brush,
                               D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -184,12 +185,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     // Back button (albums / tracks levels)
     if (m_level != Level::Playlists) {
         if (m_hover_header == 0) {
-            m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
+            m_brush->SetColor(D2DRenderer::hex(skin().on_surface, skin().hover_state));
             m_render_target->FillEllipse(D2D1::Ellipse(
                 D2D1::Point2F((float)(PAD + BTN_W / 2), hdr_y + hdr_h / 2.0f),
                 (float)(BTN_W / 2 - 4), (float)(BTN_W / 2 - 4)), m_brush);
         }
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.9f));
         D2D1_RECT_F back_rect = D2D1::RectF((float)PAD, hdr_y, (float)(PAD + BTN_W), hdr_y + hdr_h);
         m_render_target->DrawText(L"\u2190", 1, get_title_format(), back_rect, m_brush,
                                   D2D1_DRAW_TEXT_OPTIONS_NONE);
@@ -197,12 +198,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
 
     // Close button
     if (m_hover_header == 1) {
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface, skin().hover_state));
         m_render_target->FillEllipse(D2D1::Ellipse(
             D2D1::Point2F((float)(W - PAD - BTN_W / 2), hdr_y + hdr_h / 2.0f),
             (float)(BTN_W / 2 - 4), (float)(BTN_W / 2 - 4)), m_brush);
     }
-    m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
+    m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.9f));
     D2D1_RECT_F close_rect = D2D1::RectF(W - (float)(BTN_W + PAD), hdr_y, W - (float)PAD, hdr_y + hdr_h);
     m_render_target->DrawText(L"\u00D7", 1, get_title_format(), close_rect, m_brush,
                               D2D1_DRAW_TEXT_OPTIONS_NONE);
@@ -223,7 +224,7 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
         if (ry + ROW_H < 0 || ry > m_size.cy) continue;
 
         if (m_hover_row >= 0 && (t_size)m_hover_row == i) {
-            m_brush->SetColor(D2DRenderer::hex(md3::on_surface, md3::hover_state));
+            m_brush->SetColor(D2DRenderer::hex(skin().on_surface, skin().hover_state));
             m_render_target->FillRectangle(D2D1::RectF(inset, ry, W - inset, ry + ROW_H), m_brush);
         }
 
@@ -232,9 +233,9 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
         if (m_hover_row >= 0 && (t_size)m_hover_row == i) {
             // Hovered row auto-scrolls (marquee) so long titles stay readable.
             draw_text(wtext, list_left_f, ry, text_w - list_left_f - (float)PAD, (float)ROW_H,
-                      get_title_format(), D2DRenderer::hex(md3::on_surface, 0.9f));
+                      get_title_format(), D2DRenderer::hex(skin().on_surface, 0.9f));
         } else {
-            m_brush->SetColor(D2DRenderer::hex(md3::on_surface, 0.9f));
+            m_brush->SetColor(D2DRenderer::hex(skin().on_surface, 0.9f));
             D2D1_RECT_F tr = D2D1::RectF(list_left_f, ry, text_w, ry + ROW_H);
             m_render_target->DrawText((const wchar_t*)wtext, (UINT32)wcslen((const wchar_t*)wtext),
                                       get_title_format(), tr, m_brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -244,7 +245,7 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
     // No matches placeholder
     if (rows == 0) {
         const wchar_t* none = tr(L"No matches", L"无匹配");
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.6f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.6f));
         D2D1_RECT_F nr = D2D1::RectF(list_left_f, list_top + 24.0f, text_w, list_top + 48.0f);
         m_render_target->DrawText(none, (UINT32)wcslen(none), get_small_format(), nr, m_brush,
                                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -262,12 +263,12 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
             const bool active = (m_filter_letter == i);
             const bool present = m_letter_present[i];
             if (active) {
-                m_brush->SetColor(D2DRenderer::hex(md3::primary, 0.18f));
+                m_brush->SetColor(D2DRenderer::hex(skin().primary, 0.18f));
                 m_render_target->FillRectangle(D2D1::RectF(lx, gy, W - inset, gy + per), m_brush);
             }
             m_brush->SetColor(present
-                ? D2DRenderer::hex(active ? md3::primary : md3::on_surface_variant, active ? 1.0f : 0.85f)
-                : D2DRenderer::hex(md3::on_surface_variant, 0.30f));
+                ? D2DRenderer::hex(active ? skin().primary : skin().on_surface_variant, active ? 1.0f : 0.85f)
+                : D2DRenderer::hex(skin().on_surface_variant, 0.30f));
             const wchar_t ch = (wchar_t)glyphs[i];
             D2D1_RECT_F cr = D2D1::RectF(lx, gy + per * 0.15f, W - inset, gy + per);
             m_render_target->DrawText(&ch, 1, get_small_format(), cr, m_brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
@@ -285,7 +286,7 @@ void PlaylistPanel::OnPaint(CDCHandle dc)
         const float sb_x = letter_bar_visible()
             ? (float)(letter_bar_x() - SCROLL_W - 2)
             : (W - inset - (float)(SCROLL_W + 2));
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.6f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.6f));
         m_render_target->FillRectangle(D2D1::RectF(sb_x, thumb_y, sb_x + (float)SCROLL_W, thumb_y + thumb_h), m_brush);
     }
 
@@ -821,11 +822,11 @@ void PlaylistPanel::draw_search_box(float x, float y, float w, float h)
     // Focus ring (MD3 filled text field: primary outline when focused)
     const float ring = m_search_focused ? 1.5f : 0.0f;
     if (m_search_focused) {
-        m_brush->SetColor(D2DRenderer::hex(md3::primary, 1.0f));
+        m_brush->SetColor(D2DRenderer::hex(skin().primary, 1.0f));
         m_render_target->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, y, x + w, y + h), r, r), m_brush);
     }
     // Field background (inset by the ring so the outline stays crisp)
-    m_brush->SetColor(D2DRenderer::hex(md3::surface_container_highest, 1.0f));
+    m_brush->SetColor(D2DRenderer::hex(skin().surface_highest, 1.0f));
     m_render_target->FillRoundedRectangle(D2D1::RoundedRect(
         D2D1::RectF(x + ring, y + ring, x + w - ring, y + h - ring),
         (std::max)(1.0f, r - ring), (std::max)(1.0f, r - ring)), m_brush);
@@ -838,7 +839,7 @@ void PlaylistPanel::draw_search_box(float x, float y, float w, float h)
 
     if (!display.is_empty()) {
         pfc::stringcvt::string_wide_from_utf8 wtext(display);
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface, 0.95f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface, 0.95f));
         D2D1_RECT_F tr = D2D1::RectF(tx, y, tx + tw, y + h);
         m_render_target->DrawText((const wchar_t*)wtext, (UINT32)wcslen((const wchar_t*)wtext),
                                   get_small_left_format(), tr, m_brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -846,12 +847,12 @@ void PlaylistPanel::draw_search_box(float x, float y, float w, float h)
         if (m_search_focused) {
             const float cw = measure_text_width((const wchar_t*)wtext, get_small_left_format());
             const float cx = (std::min)(tx + cw, tx + tw);
-            m_brush->SetColor(D2DRenderer::hex(md3::primary, 1.0f));
+            m_brush->SetColor(D2DRenderer::hex(skin().primary, 1.0f));
             m_render_target->FillRectangle(D2D1::RectF(cx, y + 4.0f, cx + 1.5f, y + h - 4.0f), m_brush);
         }
     } else if (!m_search_focused) {
         const wchar_t* ph = tr(L"Search...", L"搜索…");
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.6f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.6f));
         D2D1_RECT_F tr = D2D1::RectF(tx, y, tx + tw, y + h);
         m_render_target->DrawText(ph, (UINT32)wcslen(ph), get_small_left_format(), tr, m_brush,
                                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -859,7 +860,7 @@ void PlaylistPanel::draw_search_box(float x, float y, float w, float h)
 
     // Clear button
     if (!m_search.is_empty()) {
-        m_brush->SetColor(D2DRenderer::hex(md3::on_surface_variant, 0.9f));
+        m_brush->SetColor(D2DRenderer::hex(skin().on_surface_variant, 0.9f));
         D2D1_RECT_F cr = D2D1::RectF(x + w - 22.0f, y, x + w - 4.0f, y + h);
         m_render_target->DrawText(L"\u00D7", 1, get_small_format(), cr, m_brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
     }
