@@ -868,29 +868,63 @@ bool FloatingCloudsWindow::get_visual_spectrum(float* bars, unsigned count)
     double t = 0;
     if (!m_vis_stream->get_absolute_time(t)) return false;
 
+    // 2048-point FFT -> 1024 bins; ~21 Hz/bin at 44.1 kHz gives real bass
+    // resolution instead of one bar per 16 linear bins.
+    const unsigned fft_size = 2048;
     audio_chunk_impl spectrum;
-    if (!m_vis_stream->get_spectrum_absolute(spectrum, t, 512)) return false;
+    if (!m_vis_stream->get_spectrum_absolute(spectrum, t, fft_size)) {
+        // Real data may not be ready right after stream creation; the SDK
+        // provides a fake spectrum for exactly this case.
+        try {
+            m_vis_stream->make_fake_spectrum_absolute(spectrum, t, fft_size);
+        } catch (...) {
+            return false;
+        }
+    }
 
     const audio_sample* data = spectrum.get_data();
-    const t_size samples = spectrum.get_sample_count(); // == fft_size / 2
+    const t_size bins = spectrum.get_sample_count(); // == fft_size / 2
     const unsigned chans = spectrum.get_channels();
-    if (!data || samples <= 0 || chans == 0) return false;
+    const unsigned srate = spectrum.get_sample_rate();
+    if (!data || bins < 2 || chans == 0 || srate == 0) return false;
 
-    // Map FFT bins to `count` bars (linear groups, max per group, averaged
-    // across channels).
+    // Musical spectrum: log-spaced bars from 40 Hz to 16 kHz (or 90% Nyquist).
+    // Linear bin grouping makes bass look dead and treble look noisy.
+    const float nyquist = (float)srate * 0.5f;
+    const float min_freq = 40.0f;
+    const float max_freq = (std::min)(16000.0f, nyquist * 0.9f);
+
     for (unsigned b = 0; b < count; b++) {
-        t_size start = (t_size)b * samples / count;
-        t_size end = (t_size)(b + 1) * samples / count;
-        if (end <= start) end = start + 1;
-        if (end > samples) end = samples;
-        double m = 0.0;
-        for (t_size s = start; s < end; s++) {
+        const float t0 = (float)b / (float)count;
+        const float t1 = (float)(b + 1) / (float)count;
+        const float f0 = min_freq * powf(max_freq / min_freq, t0);
+        const float f1 = min_freq * powf(max_freq / min_freq, t1);
+
+        t_size bin0 = (t_size)floorf(f0 * (float)fft_size / (float)srate);
+        t_size bin1 = (t_size)ceilf(f1 * (float)fft_size / (float)srate);
+        if (bin0 < 1) bin0 = 1; // skip DC bin
+        if (bin1 <= bin0) bin1 = bin0 + 1;
+        if (bin1 > bins) bin1 = bins;
+
+        // Average magnitude over the band (channels averaged first). Averaging
+        // is stable; per-bin max over-reports noise spikes.
+        double sum = 0.0;
+        for (t_size s = bin0; s < bin1; s++) {
             double v = 0.0;
             for (unsigned c = 0; c < chans; c++) v += data[s * chans + c];
             v /= (double)chans;
-            if (v > m) m = v;
+            sum += v;
         }
-        bars[b] = (float)m;
+        const double mag = sum / (double)(bin1 - bin0);
+
+        // Magnitude is linear; hearing is logarithmic. Scale in dB with a
+        // -60 dB noise floor so quiet passages don't read as full-scale.
+        const double eps = 1e-6;
+        const double db = 20.0 * log10(mag + eps);
+        double norm = (db + 60.0) / 60.0;
+        if (norm < 0.0) norm = 0.0;
+        else if (norm > 1.0) norm = 1.0;
+        bars[b] = (float)norm;
     }
     return true;
 }
@@ -901,11 +935,16 @@ void FloatingCloudsWindow::smooth_spectrum(const float* raw, float* out, unsigne
     const float dt = (float)((now - m_last_vis_tick) / 1000.0);
     m_last_vis_tick = now;
     const float dtc = (dt < 0.0f) ? 0.0f : (dt > 0.25f ? 0.25f : dt);
-    const float k = 1.0f - expf(-dtc / 0.06f); // ~60ms time constant (plan 003)
+    // Asymmetric one-pole: fast attack so kick/snare transients hit the bar
+    // height the same frame, slower decay so the bar falls naturally. A
+    // symmetric time constant was making bars lag behind the beat.
+    const float k_up = 1.0f - expf(-dtc / 0.025f);  // ~25 ms attack
+    const float k_down = 1.0f - expf(-dtc / 0.120f); // ~120 ms decay
     for (unsigned i = 0; i < count && i < 32; i++) {
         float v = raw[i];
         if (v < 0.0f) v = 0.0f;
         else if (v > 1.0f) v = 1.0f;
+        const float k = (v > m_vis_smooth[i]) ? k_up : k_down;
         m_vis_smooth[i] += (v - m_vis_smooth[i]) * k;
         out[i] = m_vis_smooth[i];
     }
