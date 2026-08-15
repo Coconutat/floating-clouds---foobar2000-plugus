@@ -228,7 +228,10 @@ void StyleRenderer::render_visualizer(const CSize& size)
     m_window->smooth_spectrum(bars, smoothed, bar_count);
 
     for (int i = 0; i < bar_count; i++) {
-        float v = smoothed[i] * 1.8f; // boost for a livelier look
+        // dB-normalized bars (0..1) need only a touch of gain; the old
+        // 1.8x boost was compensating for raw linear FFT magnitudes and
+        // made everything clip once the spectrum became accurate.
+        float v = smoothed[i] * 1.1f;
         if (v < 0.0f) v = 0.0f;
         else if (v > 1.0f) v = 1.0f;
         float h = v * bar_area_h;
