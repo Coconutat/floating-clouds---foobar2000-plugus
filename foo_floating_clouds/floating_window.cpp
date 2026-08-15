@@ -543,9 +543,23 @@ void FloatingCloudsWindow::on_anim_tick()
     const float dtc = (dt < 0.0f) ? 0.0f : (dt > 0.10f ? 0.10f : dt);
     bool changed = false;
 
-    // Progress: time-based ease toward the target (tau 0.10s preserves the old
-    // k=0.15/frame @60fps feel).
-    const float np = approach_dt(m_display_progress, m_target_progress, 0.10f, dtc);
+    // Progress: during playback, extrapolate 1:1 from the last playback-time
+    // callback so the bar advances smoothly every frame instead of lurching
+    // between foobar2000's ~13 Hz time updates. When paused/stopped, ease to
+    // the last known target so a seek/reset settles instead of snapping.
+    float np;
+    if (m_playing && !m_paused && m_track_length > 0.0) {
+        double t = m_playback_time;
+        const double now_ms = (double)GetTickCount64();
+        if (m_last_playback_time_update > 0.0) {
+            t += (now_ms - m_last_playback_time_update) / 1000.0;
+        }
+        if (t < 0.0) t = 0.0;
+        if (t > m_track_length) t = m_track_length;
+        np = (float)(t / m_track_length);
+    } else {
+        np = approach_dt(m_display_progress, m_target_progress, 0.10f, dtc);
+    }
     if (fabsf(np - m_display_progress) > 0.0005f) changed = true;
     m_display_progress = np;
 
@@ -735,6 +749,10 @@ void FloatingCloudsWindow::on_playback_new_track(const char* title, const char* 
     m_album_art_dirty = true;
     m_playing = true;
     m_paused = false;
+    m_playback_time = 0.0;
+    m_target_progress = 0.0f;
+    m_display_progress = 0.0f;
+    m_last_playback_time_update = (double)GetTickCount64();
     FB2K_console_formatter() << "Floating Clouds: new track (visible=" << (m_visible ? 1 : 0) << ")";
     
     // Get track length
@@ -762,6 +780,7 @@ void FloatingCloudsWindow::on_playback_stop()
     m_playback_time = 0.0;
     m_track_length = 0.0;
     m_target_progress = 0.0f;
+    m_last_playback_time_update = 0.0;
     m_lyric_lines.remove_all();
     m_plain_lines.remove_all();
     m_lyrics_has_lrc = false;
@@ -783,9 +802,10 @@ void FloatingCloudsWindow::on_playback_stop()
 void FloatingCloudsWindow::on_playback_time(double time)
 {
     m_playback_time = time;
+    m_last_playback_time_update = (double)GetTickCount64();
     m_target_progress = m_track_length > 0 ? (float)(time / m_track_length) : 0.0f;
     m_target_progress = std::clamp(m_target_progress, 0.0f, 1.0f);
-    start_anim_timer(); // ease the displayed progress toward this target
+    start_anim_timer(); // keep the frame loop alive while playing
 
     // Sync lyrics to the current time.
     if (m_lyrics_has_lrc && m_lyric_lines.get_size() > 0) {

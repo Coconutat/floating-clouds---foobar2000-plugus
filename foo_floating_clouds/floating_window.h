@@ -195,6 +195,9 @@ private:
     double m_playback_time = 0.0;
     double m_track_length = 0.0;
     float m_volume = 0.0f;
+    // Wall-clock tick of the last on_playback_time callback; used to
+    // extrapolate smooth 1:1 progress between foobar2000's ~13 Hz updates.
+    double m_last_playback_time_update = 0.0;
     
     // Drag state
     bool m_dragging = false;
