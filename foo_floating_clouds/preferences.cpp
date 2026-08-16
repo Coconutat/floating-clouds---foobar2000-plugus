@@ -166,6 +166,7 @@ public:
         MSG_WM_HSCROLL(OnHScroll)
         COMMAND_HANDLER_EX(IDC_AUTO_HIDE, BN_CLICKED, OnAutoHideClicked)
         COMMAND_HANDLER_EX(IDC_DEBUG_LOG, BN_CLICKED, OnDebugLogClicked)
+        COMMAND_HANDLER_EX(IDC_ATTACHED_BASELINE, BN_CLICKED, OnAttachedBaselineClicked)
         COMMAND_HANDLER_EX(IDC_DEFAULT_STYLE, CBN_SELCHANGE, OnStyleChanged)
         COMMAND_HANDLER_EX(IDC_SKIN, CBN_SELCHANGE, OnSkinChanged)
         COMMAND_HANDLER_EX(IDC_COLOR_MODE, CBN_SELCHANGE, OnColorModeChanged)
@@ -178,6 +179,7 @@ private:
     void OnHScroll(int nCode, int nPos, CScrollBar pScrollBar);
     void OnAutoHideClicked(UINT, int, CWindow);
     void OnDebugLogClicked(UINT, int, CWindow);
+    void OnAttachedBaselineClicked(UINT, int, CWindow);
     void OnStyleChanged(UINT, int, CWindow);
     void OnSkinChanged(UINT, int, CWindow);
     void OnColorModeChanged(UINT, int, CWindow);
@@ -219,6 +221,10 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
     // Debug logging checkbox
     cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
     Button_SetCheck(GetDlgItem(IDC_DEBUG_LOG), cfg_debug.get() ? BST_CHECKED : BST_UNCHECKED);
+
+    // VisualizerArt attached-baseline checkbox
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
+    Button_SetCheck(GetDlgItem(IDC_ATTACHED_BASELINE), cfg_attached.get() ? BST_CHECKED : BST_UNCHECKED);
 
     // Style combo (localized names)
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
@@ -293,6 +299,13 @@ void CMyPreferences::OnDebugLogClicked(UINT, int, CWindow)
     cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
     cfg_debug = (Button_GetCheck(GetDlgItem(IDC_DEBUG_LOG)) == BST_CHECKED);
     FB2K_console_formatter() << "Floating Clouds: debug logging " << (cfg_debug.get() ? "ON" : "OFF");
+}
+
+void CMyPreferences::OnAttachedBaselineClicked(UINT, int, CWindow)
+{
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
+    cfg_attached = (Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED);
+    FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::OnHScroll(int nCode, int nPos, CScrollBar pScrollBar)
@@ -396,6 +409,7 @@ void CMyPreferences::ReloadLocalizedStrings()
     SetDlgItemText(IDC_AUTO_HIDE, tr(L"Auto-hide when stopped", L"停止时自动隐藏"));
     SetDlgItemText(IDC_GRP_STYLE, tr(L"Style", L"样式"));
     SetDlgItemText(IDC_LBL_DEFAULT_STYLE, tr(L"Default style:", L"默认样式："));
+    SetDlgItemText(IDC_ATTACHED_BASELINE, tr(L"Attach wave baseline (Visualizer+Cover)", L"音浪基线贴附（可视化+封面）"));
     SetDlgItemText(IDC_GRP_SKIN, tr(L"Skin", L"皮肤"));
     SetDlgItemText(IDC_LBL_DEFAULT_SKIN, tr(L"Default skin:", L"默认皮肤："));
     SetDlgItemText(IDC_LBL_COLOR_MODE, tr(L"Color mode:", L"深浅模式："));
@@ -459,11 +473,13 @@ bool CMyPreferences::HasChanged()
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
     cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
     cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
 
     CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
     int opacity = slider.GetPos();
 
     bool auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
+    bool attached = Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED;
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
     int style = style_combo.GetCurSel();
     CComboBox skin_combo = GetDlgItem(IDC_SKIN);
@@ -481,6 +497,7 @@ bool CMyPreferences::HasChanged()
 
     return opacity != (int)cfg_opacity.get_value() ||
            auto_hide != cfg_auto_hide.get() ||
+           attached != cfg_attached.get() ||
            (style >= 0 && style != (int)cfg_style.get_value()) ||
            (skin >= 0 && skin != (int)cfg_skin.get_value()) ||
            (mode >= 0 && mode != (int)cfg_mode.get_value()) ||
@@ -502,6 +519,10 @@ void CMyPreferences::apply()
     bool auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
     cfg_auto_hide = auto_hide;
+
+    bool attached = Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED;
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
+    cfg_attached = attached;
 
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
     int style = style_combo.GetCurSel();
@@ -544,6 +565,7 @@ void CMyPreferences::reset()
     UpdateOpacityLabel(DEFAULT_OPACITY);
 
     Button_SetCheck(GetDlgItem(IDC_AUTO_HIDE), DEFAULT_AUTO_HIDE ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(GetDlgItem(IDC_ATTACHED_BASELINE), BST_UNCHECKED);
 
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
     style_combo.SetCurSel(DEFAULT_STYLE);

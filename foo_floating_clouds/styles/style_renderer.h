@@ -23,6 +23,7 @@ private:
     void render_album_focus(const CSize& size);
     void render_progress_ring(const CSize& size);
     void render_visualizer(const CSize& size);
+    void render_visualizer_art(const CSize& size);
     void render_lyrics_line(const CSize& size);
     void draw_button_row(const CSize& size);
 

@@ -23,6 +23,11 @@ namespace cfg_guids {
     static const GUID current_skin = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x18 } };
     static const GUID color_mode = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1B } };
     static const GUID font_family = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1C } };
+    // One-time migration flag: old 8-style numbering -> current enum.
+    static const GUID style_migrated = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1D } };
+    // VisualizerArt: attach the wave baseline (bars sit on the line, line
+    // spans the same width as the bars). false = separated baseline (default).
+    static const GUID vis_art_attached_baseline = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x1E } };
 
     // Hotkeys - modifier keys (MOD_ALT | MOD_CONTROL etc)
     static const GUID hk_drag_mod = { 0x1a2b3c4d, 0x5e6f, 0x7890, { 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x10 } };
@@ -49,7 +54,8 @@ enum class FloatingStyle : int32_t {
     ProgressRing = 3, // was 5
     Visualizer = 4,   // was 6
     LyricsLine = 5,   // was 7
-    Count = 6
+    VisualizerArt = 6, // visualizer + album art + wave-base progress line
+    Count = 7
 };
 
 // Visual skin (material system), orthogonal to FloatingStyle (layout).
@@ -145,6 +151,7 @@ inline bool style_has_buttons(FloatingStyle s) {
         case FloatingStyle::AlbumFocus:
         case FloatingStyle::ProgressRing:
         case FloatingStyle::Visualizer:
+        case FloatingStyle::VisualizerArt:
             return true;
         default:
             return false; // Minimal (single-line) and LyricsLine (lyrics overlay)

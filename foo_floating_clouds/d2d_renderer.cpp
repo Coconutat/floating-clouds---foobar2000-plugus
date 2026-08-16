@@ -404,6 +404,8 @@ void D2DRenderer::release_glass_brushes()
     if (m_specular_stops) { m_specular_stops->Release(); m_specular_stops = nullptr; }
     if (m_glass_stroke_brush) { m_glass_stroke_brush->Release(); m_glass_stroke_brush = nullptr; }
     if (m_glass_stroke_stops) { m_glass_stroke_stops->Release(); m_glass_stroke_stops = nullptr; }
+    if (m_progress_gradient_brush) { m_progress_gradient_brush->Release(); m_progress_gradient_brush = nullptr; }
+    if (m_progress_gradient_stops) { m_progress_gradient_stops->Release(); m_progress_gradient_stops = nullptr; }
 }
 
 void D2DRenderer::ensure_gradient_brush(
@@ -667,6 +669,45 @@ void D2DRenderer::draw_progress_bar(float x, float y, float width, float height,
             m_render_target->FillRoundedRectangle(
                 D2D1::RoundedRect(D2D1::RectF(x, y, x + fg_width, y + height), height / 2, height / 2), m_brush);
         }
+    }
+}
+
+void D2DRenderer::draw_progress_bar_gradient(float x, float y, float width, float height,
+                                              float progress, const D2D1_COLOR_F& c0,
+                                              const D2D1_COLOR_F& c1, const D2D1_COLOR_F& bg_color)
+{
+    // Background track (the wave-base "pedestal").
+    m_brush->SetColor(bg_color);
+    m_render_target->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(x, y, x + width, y + height), height / 2, height / 2), m_brush);
+
+    const float fg_width = width * std::clamp(progress, 0.0f, 1.0f);
+    if (fg_width <= 0.0f) return;
+
+    // Horizontal primary->tertiary gradient spanning the FULL track; the fill
+    // reveals it left-to-right, so the leading edge color transitions through
+    // the wave ramp as the song progresses.
+    D2D1_GRADIENT_STOP gs[2] = {
+        { 0.0f, c0 },
+        { 1.0f, c1 },
+    };
+    ensure_gradient_brush(&m_progress_gradient_brush, &m_progress_gradient_stops,
+        D2D1::Point2F(x, y), D2D1::Point2F(x + width, y), gs, 2);
+
+    if (fg_width < height) {
+        // Tiny progress: dot at the gradient's current leading-edge color.
+        const float t = std::clamp(progress, 0.0f, 1.0f);
+        m_brush->SetColor(D2D1::ColorF(c0.r + (c1.r - c0.r) * t,
+                                       c0.g + (c1.g - c0.g) * t,
+                                       c0.b + (c1.b - c0.b) * t,
+                                       c0.a + (c1.a - c0.a) * t));
+        const float dr = fg_width / 2.0f;
+        m_render_target->FillEllipse(
+            D2D1::Ellipse(D2D1::Point2F(x + dr, y + height / 2.0f), dr, dr), m_brush);
+    } else if (m_progress_gradient_brush) {
+        m_render_target->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x, y, x + fg_width, y + height), height / 2, height / 2),
+            m_progress_gradient_brush);
     }
 }
 

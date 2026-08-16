@@ -19,6 +19,7 @@
 #define IDC_HOTKEY_SKIN                 1011
 #define IDC_COLOR_MODE                  1012
 #define IDC_FONT_FAMILY                 1013
+#define IDC_ATTACHED_BASELINE           1014
 
 // Localization
 #define IDC_LANGUAGE                    1100

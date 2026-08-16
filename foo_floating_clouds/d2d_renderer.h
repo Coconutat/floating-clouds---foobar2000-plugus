@@ -80,6 +80,13 @@ public:
     void draw_progress_bar(float x, float y, float width, float height,
                            float progress, const D2D1_COLOR_F& fg_color, 
                            const D2D1_COLOR_F& bg_color);
+
+    // Draw a progress bar whose fill is a horizontal gradient from c0 to c1.
+    // Used by the VisualizerArt wave-base line: the leading edge travels
+    // through the gradient as progress advances.
+    void draw_progress_bar_gradient(float x, float y, float width, float height,
+                                    float progress, const D2D1_COLOR_F& c0,
+                                    const D2D1_COLOR_F& c1, const D2D1_COLOR_F& bg_color);
     
     // Draw album art
     void draw_album_art(float x, float y, float size, album_art_data_ptr art);
@@ -152,6 +159,10 @@ protected:
     ID2D1GradientStopCollection* m_specular_stops = nullptr;
     ID2D1LinearGradientBrush* m_glass_stroke_brush = nullptr;
     ID2D1GradientStopCollection* m_glass_stroke_stops = nullptr;
+
+    // Progress-bar gradient (VisualizerArt wave-base line)
+    ID2D1LinearGradientBrush* m_progress_gradient_brush = nullptr;
+    ID2D1GradientStopCollection* m_progress_gradient_stops = nullptr;
 
     ID2D1SolidColorBrush* m_brush = nullptr;
     

@@ -70,12 +70,23 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
     
     x = (int)cfg_x.get_value();
     y = (int)cfg_y.get_value();
-    // Migrate the saved style number ONCE at load (old 8-style enum -> new
-    // 6-style) and persist the migrated value, so apply_preferences must never
-    // re-migrate (re-migrating a new 0-5 value corrupts the style: 2->1, 3->0...).
+    // Migrate the saved style number ONCE (old 8-style enum -> current enum)
+    // and persist the migrated value. A dedicated flag prevents re-migration
+    // on later launches; re-migrating new values corrupts them (old 6/7 and
+    // new 6 overlap numerically).
     {
+        cfg_var_modern::cfg_bool cfg_migrated(cfg_guids::style_migrated, false);
         int saved = (int)cfg_style.get_value();
-        m_current_style = static_cast<FloatingStyle>(migrate_style(saved));
+        if (!cfg_migrated.get()) {
+            int migrated = migrate_style(saved);
+            if (migrated != saved) {
+                cfg_style = migrated;
+                saved = migrated;
+            }
+            cfg_migrated = true;
+        }
+        m_current_style = (saved >= 0 && saved < (int)FloatingStyle::Count)
+            ? static_cast<FloatingStyle>(saved) : static_cast<FloatingStyle>(DEFAULT_STYLE);
         if ((int)m_current_style != saved) cfg_style = (int)m_current_style;
     }
     // Apply the saved skin (0 = MD3 default, 1 = Apple).
@@ -859,6 +870,9 @@ CSize FloatingCloudsWindow::calculate_size()
             return CSize(200, 272);
         
         case FloatingStyle::Visualizer:
+            return CSize(320, 224);
+        
+        case FloatingStyle::VisualizerArt:
             return CSize(320, 224);
         
         case FloatingStyle::LyricsLine:

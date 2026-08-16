@@ -30,6 +30,7 @@ inline const wchar_t* tr_style(FloatingStyle s)
         case FloatingStyle::ProgressRing: return tr(L"Progress Ring", L"进度环");
         case FloatingStyle::Visualizer: return tr(L"Visualizer", L"可视化");
         case FloatingStyle::LyricsLine: return tr(L"Lyrics Line", L"歌词行");
+        case FloatingStyle::VisualizerArt: return tr(L"Visualizer + Cover", L"可视化 + 封面");
         default: return L"";
     }
 }

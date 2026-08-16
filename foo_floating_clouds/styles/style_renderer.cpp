@@ -23,6 +23,7 @@ void StyleRenderer::render(FloatingStyle style, const CSize& window_size)
         case FloatingStyle::AlbumFocus:     render_album_focus(window_size); break;
         case FloatingStyle::ProgressRing:   render_progress_ring(window_size); break;
         case FloatingStyle::Visualizer:     render_visualizer(window_size); break;
+        case FloatingStyle::VisualizerArt:  render_visualizer_art(window_size); break;
         case FloatingStyle::LyricsLine:     render_lyrics_line(window_size); break;
         default:                            render_full(window_size); break;
     }
@@ -265,6 +266,91 @@ void StyleRenderer::render_visualizer(const CSize& size)
     m_renderer->draw_text(wdisplay, pad, text_y, avail_w, 16,
                           m_renderer->get_artist_format(),
                           D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
+
+    draw_button_row(size);
+}
+
+void StyleRenderer::render_visualizer_art(const CSize& size)
+{
+    const float pad = (float)WINDOW_PADDING;
+    const float inset = m_renderer->is_ulw() ? (float)SHADOW_INSET : 0.0f;
+    const float opad = pad + inset;
+
+    // Top block: album art + track text.
+    const float art_size = 52.0f;
+    m_renderer->draw_album_art(opad, opad, art_size, m_window->get_album_art());
+    const float text_x = opad + art_size + 10.0f;
+    const float text_w = (float)size.cx - text_x - pad - inset;
+    pfc::stringcvt::string_wide_from_utf8 wtitle(m_window->get_title());
+    m_renderer->draw_text(wtitle, text_x, opad + 2.0f, text_w, 18,
+                          m_renderer->get_title_format(),
+                          D2DRenderer::hex(m_renderer->skin().on_surface, 0.95f));
+    pfc::stringcvt::string_wide_from_utf8 wartist(m_window->get_artist());
+    m_renderer->draw_text(wartist, text_x, opad + 22.0f, text_w, 14,
+                          m_renderer->get_artist_format(),
+                          D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.85f));
+
+    // Wave-base progress line. Two modes:
+    //  - attached (cfg switch): bars sit directly on the line and the line
+    //    spans exactly the bars' width (the "waves rest on the pedestal" look).
+    //  - separated (default): 10px clearance so waves never touch the line.
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
+    const bool attached = cfg_attached.get();
+    const float line_h = 3.0f;
+    const float line_y = (float)button_row_y(size.cy) - 16.0f;
+    const float bar_area_bottom = attached ? line_y : line_y - 10.0f;
+    const float bar_area_top = opad + art_size + 12.0f;
+    const float bar_area_h = bar_area_bottom - bar_area_top;
+    if (bar_area_h < 8.0f) return;
+
+    const float avail_w = (float)size.cx - pad * 2;
+    const int bar_count = 32;
+    const float bar_w = (avail_w - (bar_count - 1)) / bar_count;
+
+    float bars[bar_count] = {};
+    m_window->get_visual_spectrum(bars, bar_count);
+    float smoothed[bar_count] = {};
+    m_window->smooth_spectrum(bars, smoothed, bar_count);
+
+    // Wave colors: the same primary -> tertiary ramp the Visualizer uses.
+    const uint32_t c1 = m_renderer->skin().primary;
+    const uint32_t c2 = m_renderer->skin().tertiary;
+
+    for (int i = 0; i < bar_count; i++) {
+        float v = smoothed[i] * 1.1f;
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        const float h = v * bar_area_h;
+        const float x = pad + i * (bar_w + 1);
+        const float y = bar_area_bottom - h;
+
+        const float intensity = (float)i / bar_count;
+        const float r = (float)((c1 >> 16) & 0xFF) * (1.0f - intensity) + (float)((c2 >> 16) & 0xFF) * intensity;
+        const float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
+        const float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
+        m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
+        const float bar_r = (std::min)(bar_w / 2.0f, 2.0f);
+        m_renderer->get_render_target()->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x, y, x + bar_w, bar_area_bottom), bar_r, bar_r),
+            m_renderer->get_brush());
+        if (y + bar_r < bar_area_bottom) {
+            m_renderer->get_render_target()->FillRectangle(
+                D2D1::RectF(x, y + bar_r, x + bar_w, bar_area_bottom), m_renderer->get_brush());
+        }
+    }
+
+    // Progress line: a thin rounded bar whose fill is a primary->tertiary
+    // gradient spanning the full width, so the leading edge transitions
+    // through the wave colors as the song progresses. Attached mode uses the
+    // bars' exact horizontal span; separated mode insets it into the card.
+    const float line_x = attached ? pad : pad + inset;
+    const float line_w = (float)size.cx - line_x * 2;
+    m_renderer->draw_progress_bar_gradient(
+        line_x, line_y, line_w, line_h,
+        m_window->get_display_progress(),
+        D2DRenderer::hex(c1, 1.0f), D2DRenderer::hex(c2, 1.0f),
+        D2DRenderer::hex(m_renderer->skin().progress_track,
+                         m_renderer->skin().progress_track_alpha));
 
     draw_button_row(size);
 }
