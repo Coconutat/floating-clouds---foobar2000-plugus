@@ -174,24 +174,28 @@ public:
         const t_size field_count = info.meta_get_count();
         for (t_size f = 0; f < field_count; f++) {
             const char* name = info.meta_enum_name(f);
-            const t_size vc = info.meta_enum_value_count(f);
-            if (!name || !*name || vc == 0) continue;
+            if (!name || !*name) continue;
+            // Skip binary artwork fields ("COVER ART"/ID3-APIC, "PICTURE"/
+            // FLAC): their values are image data, not text — converting them
+            // would corrupt or drop the embedded picture.
+            if (pfc::stricmp_ascii(name, "COVER ART") == 0 ||
+                pfc::stricmp_ascii(name, "PICTURE") == 0) continue;
 
-            pfc::list_t<pfc::string8> vals;
-            bool field_changed = false;
+            const t_size vc = info.meta_enum_value_count(f);
             for (t_size j = 0; j < vc; j++) {
                 const char* val = info.meta_enum_value(f, j);
                 const char* base = val ? val : "";
                 pfc::string8 s = to_simplified_str(base);
-                if (strcmp(s.get_ptr(), base) != 0) field_changed = true;
-                vals.add_item(s);
-            }
-            if (!field_changed) continue;
+                if (strcmp(s.get_ptr(), base) == 0) continue;
 
-            // Rebuild the field from the converted values (preserves order).
-            info.meta_remove_field(name);
-            for (t_size j = 0; j < vals.get_size(); j++) info.meta_add(name, vals[j].get_ptr());
-            any = true;
+                // In-place value edit: field order/count stay unchanged, so the
+                // enumeration indices above remain valid. The old remove_field
+                // + add rebuilt the list mid-loop, drifting the index past the
+                // fields that followed the converted one (e.g. ALBUM ARTIST
+                // never converted) and reordering/recreating every field.
+                info.meta_modify_value(f, j, s.get_ptr());
+                any = true;
+            }
         }
 
         if (any) m_state->converted++; else m_state->unchanged++;
