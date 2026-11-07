@@ -70,7 +70,10 @@ BEGIN
     LTEXT           "Color mode:",IDC_LBL_COLOR_MODE,16,208,56,8
     COMBOBOX        IDC_COLOR_MODE,80,206,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
     LTEXT           "Font family:",IDC_LBL_FONT_FAMILY,16,224,58,8
-    COMBOBOX        IDC_FONT_FAMILY,76,222,104,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    // WS_VSCROLL is load-bearing: a combo built without it gets a popup list with
+    // no scrollbar, and that list ignores the mouse wheel entirely (verified), so
+    // with ~hundreds of installed font families only the first ten rows are reachable.
+    COMBOBOX        IDC_FONT_FAMILY,76,222,104,100,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "UI Language:",IDC_LBL_LANGUAGE,184,224,66,8
     COMBOBOX        IDC_LANGUAGE,252,222,62,100,CBS_DROPDOWNLIST | WS_TABSTOP
 END
