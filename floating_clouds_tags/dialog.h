@@ -37,6 +37,7 @@ private:
     LRESULT OnWmClose(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
     void ReloadStrings();
+    void UpdateHint(); // hint text depends on the selected region (auto mode)
     void PrefillFromClipboard();
     void UpdatePreview();
     bool FetchNow(int64_t album_id, int region_index, AppleAlbum& out, pfc::string8& err);

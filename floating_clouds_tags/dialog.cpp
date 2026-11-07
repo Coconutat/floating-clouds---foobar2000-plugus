@@ -86,9 +86,7 @@ BOOL TagsDialog::OnInitDialog(CWindow, LPARAM)
 void TagsDialog::ReloadStrings()
 {
     SetWindowText(tr(L"Apple Music Tags", L"Apple Music 标签更新"));
-    SetDlgItemText(IDC_FETCH_HINT, tr(
-        L"Paste a music.apple.com album link or numeric album ID (clipboard is prefilled if it holds one).",
-        L"粘贴 music.apple.com 专辑链接或数字专辑 ID（剪贴板里有链接会自动预填）。"));
+    UpdateHint();
     SetDlgItemText(IDC_FETCH, tr(L"Fetch", L"获取"));
     SetDlgItemText(IDC_APPLY, tr(L"Apply", L"应用"));
     SetDlgItemText(IDC_CLOSE, tr(L"Close", L"关闭"));
@@ -98,6 +96,16 @@ void TagsDialog::ReloadStrings()
     for (const FieldControl& fc : kFieldControls) {
         SetDlgItemText(fc.id, tr(fc.en, fc.zh));
     }
+}
+
+void TagsDialog::UpdateHint()
+{
+    const bool scan = (m_region_index >= 0 && m_region_index < kRegionCount) && kRegions[m_region_index].scan_all;
+    SetDlgItemText(IDC_FETCH_HINT, scan
+        ? tr(L"Auto: queries every region in parallel and keeps the most Chinese answer (CN is not assumed).",
+             L"自动：并发查询所有地区，取中文最多的结果（不假设 CN 有这张碟）。")
+        : tr(L"Paste a music.apple.com album link or numeric album ID (clipboard is prefilled if it holds one).",
+             L"粘贴 music.apple.com 专辑链接或数字专辑 ID（剪贴板里有链接会自动预填）。"));
 }
 
 void TagsDialog::PrefillFromClipboard()
@@ -116,7 +124,11 @@ void TagsDialog::PrefillFromClipboard()
             SetDlgItemTextW(IDC_URL, w.c_str());
             pfc::string8 region;
             int64_t album_id = 0;
-            if (parse_album_url(w.c_str(), region, album_id) && !region.is_empty()) {
+            // The auto mode is an explicit "do not trust one region" choice, so a
+            // pasted link's region must not silently turn it back into a single
+            // storefront (CN of all things, for zh-Hans links).
+            if (parse_album_url(w.c_str(), region, album_id) && !region.is_empty()
+                && !kRegions[m_region_index].scan_all) {
                 int idx = region_index_by_code(region.get_ptr());
                 if (idx >= 0) {
                     CComboBox cb = GetDlgItem(IDC_REGION);
@@ -181,15 +193,19 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
 
     // Region: the combo selection wins. The URL's region only provides the
     // default before the user has touched the dropdown (pasting a
-    // region-bearing link must not override an explicit choice).
+    // region-bearing link must not override an explicit choice) - and never
+    // overrides the auto mode, which exists precisely to avoid trusting one
+    // storefront (a zh-Hans link would otherwise pick CN, a region that is
+    // locked for most releases).
     int region_index = m_region_index;
-    if (!region.is_empty() && !m_region_touched) {
+    if (!region.is_empty() && !m_region_touched && !kRegions[region_index].scan_all) {
         int idx = region_index_by_code(region.get_ptr());
         if (idx >= 0) region_index = idx;
     }
     CComboBox cb = GetDlgItem(IDC_REGION);
     cb.SetCurSel(region_index);
     m_region_index = region_index;
+    UpdateHint();
 
     AppleAlbum album;
     pfc::string8 err;
@@ -208,8 +224,11 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
     ApplyEnabled(true);
 
     // Tell the user plainly that these are char-by-char converted
-    // (Traditional->Simplified) tags from another storefront, not official CN
-    // metadata: the selected storefront either lacks the album or its track list.
+    // (Traditional->Simplified) tags, not official Simplified metadata. The
+    // wording depends on the mode: a manual region failed over, while the auto
+    // mode deliberately looked everywhere and picked this source - saying "the
+    // album is not available on the selected storefront" there would be wrong
+    // (there is no selected storefront, and CN was never assumed).
     if (m_album.t2s_applied) {
         pfc::string8 source;
         const int source_index = region_index_by_code(m_album.region.get_ptr());
@@ -219,15 +238,26 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
         } else {
             source = m_album.region;
         }
-        popup_message::g_show(
-            pfc::string_formatter()
-                << tr8("This album is not available on the selected storefront. Tags were fetched from ",
-                       "该专辑在所选地区不存在，已改从 ")
-                << source
-                << tr8(" and converted character-by-character from Traditional Chinese to Simplified Chinese. "
-                       "Some titles or names may differ from mainland conventions.",
-                       " 地区获取，并将繁体中文逐字转换为简体中文。个别标题或译名可能与大陆习惯不同。"),
-            tr8("Apple Music Tags", "Apple Music 标签更新"));
+        if (kRegions[m_region_index].scan_all) {
+            popup_message::g_show(
+                pfc::string_formatter()
+                    << tr8("Auto mode: Chinese tags were found on ", "自动模式：已从 ")
+                    << source
+                    << tr8(" and converted character-by-character to Simplified Chinese. "
+                           "Some titles or names may differ from mainland conventions.",
+                           " 取到中文标签，并逐字转为简体中文（非官方简中）。个别标题或译名可能与大陆习惯不同。"),
+                tr8("Apple Music Tags", "Apple Music 标签更新"));
+        } else {
+            popup_message::g_show(
+                pfc::string_formatter()
+                    << tr8("This album is not available on the selected storefront. Tags were fetched from ",
+                           "该专辑在所选地区不存在，已改从 ")
+                    << source
+                    << tr8(" and converted character-by-character from Traditional Chinese to Simplified Chinese. "
+                           "Some titles or names may differ from mainland conventions.",
+                           " 地区获取，并将繁体中文逐字转换为简体中文。个别标题或译名可能与大陆习惯不同。"),
+                tr8("Apple Music Tags", "Apple Music 标签更新"));
+        }
     }
 }
 
@@ -245,12 +275,14 @@ void TagsDialog::UpdatePreview()
     preview += artist;
     preview += L"    ";
     preview += tr(L"Region: ", L"地区：");
-    preview += region_label(m_region_index);
+    const bool scan_mode = kRegions[m_region_index].scan_all;
+    preview += scan_mode ? tr(L"Auto scan", L"自动扫描") : region_label(m_region_index);
     // The selection is only a preference: the fetch chain may have answered from
-    // another storefront, so say where the metadata actually came from.
+    // another storefront, so say where the metadata actually came from. In auto
+    // mode the source always differs from the "selection" by definition.
     const int source_index = region_index_by_code(m_album.region.get_ptr());
-    if (source_index >= 0 && source_index != m_region_index) {
-        preview += tr(L" (metadata fetched from ", L"（元数据取自 ");
+    if (source_index >= 0 && (scan_mode || source_index != m_region_index)) {
+        preview += tr(L" (metadata from ", L"（元数据取自 ");
         preview += region_label(source_index);
         preview += tr(L")", L"）");
     }
@@ -297,6 +329,7 @@ void TagsDialog::OnRegionChanged(UINT, int, CWindow)
     if (sel < 0) return;
     m_region_touched = true;
     m_region_index = sel;
+    UpdateHint();
     UpdatePreview();
 }
 

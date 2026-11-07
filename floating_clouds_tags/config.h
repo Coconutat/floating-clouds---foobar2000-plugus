@@ -45,7 +45,7 @@ inline const RegionInfo kRegions[] = {
     // Not a storefront: queries all of them in parallel and keeps the answer with
     // the most Chinese text, so Chinese metadata is found no matter which region
     // actually carries it (see itunes.cpp scan_storefronts).
-    { "",   "zh-Hans", L"CN auto: scan regions for Chinese", L"CN 自动：多地区扫描中文", true },
+    { "",   "zh-Hans", L"Auto: scan regions for Chinese", L"自动：扫描各地区中文", true },
 };
 constexpr int32_t kRegionCount = (int32_t)(sizeof(kRegions) / sizeof(kRegions[0]));
 
