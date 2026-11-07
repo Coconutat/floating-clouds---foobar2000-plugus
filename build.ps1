@@ -728,7 +728,9 @@ if ($Package) {
     foreach ($c in $AllComponents) {
         $map[$c.ComponentName] = Join-Path $WorkspaceRoot $c.Folder
     }
-    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map
+    # Debug artifacts get a tag so they cannot overwrite the Release ones.
+    $cfgTag = if ($Configuration -ne 'Release') { $Configuration.ToLowerInvariant() } else { '' }
+    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map -Suffix $cfgTag
     if ($res.Artifacts.Count -gt 0) {
         Write-Log 'Release artifacts:' Cyan
         foreach ($a in $res.Artifacts) {

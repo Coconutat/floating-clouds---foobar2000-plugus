@@ -275,7 +275,9 @@ if ($Package -and $failed.Count -eq 0) {
     foreach ($comp in $Selected) {
         $map[$comp.Dll] = Split-Path ($comp.Project) -Parent
     }
-    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map
+    # Debug artifacts get a tag so they cannot overwrite the Release ones.
+    $cfgTag = if ($Configuration -ne 'Release') { $Configuration.ToLowerInvariant() } else { '' }
+    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map -Suffix $cfgTag
     Write-Host ''
     Write-Agent 'Release artifacts:' Cyan
     foreach ($a in $res.Artifacts) {

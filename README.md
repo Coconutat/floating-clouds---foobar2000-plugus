@@ -135,14 +135,17 @@ Packaging names every install file after its component, version and build date:
 
 ```
 <component>-<version>-<yyyyMMdd>.fb2k-component
-foo_floating_clouds-0.2.0-20261107.fb2k-component
-foo_floating_clouds_tags-0.1.2-20261107.fb2k-component
+foo_floating_clouds-0.2.5-20261107.fb2k-component
+foo_floating_clouds_tags-0.2.5-20261107.fb2k-component
 foo_playlist_organizer-0.1.2-20261107.fb2k-component
 ```
 
 `<version>` comes from that component's `DECLARE_COMPONENT_VERSION`, so bumping it there is enough. Inside the
 package the DLL keeps its canonical `foo_*.dll` name and manifest — only the install file carries the suffix,
 because foobar2000's manifest lookup depends on the DLL name.
+
+A non-Release configuration is tagged so it cannot overwrite the release files: `-Configuration Debug` produces
+`...-20261107-debug.fb2k-component`. `package-all.ps1` instead appends the platform after the date (`...-20261107-x64`).
 
 Every packaging run also rewrites `dist/SHA256SUMS.txt` over all packages in `dist/` (`sha256sum` format:
 `<hash>  <filename>`, LF, no BOM), so the downloads can be verified:

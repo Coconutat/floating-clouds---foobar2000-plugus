@@ -131,13 +131,16 @@ foobar2000 SDK **不随仓库提供**。从 <https://www.foobar2000.org/SDK> 下
 
 ```
 <组件>-<版本>-<yyyyMMdd>.fb2k-component
-foo_floating_clouds-0.2.0-20261107.fb2k-component
-foo_floating_clouds_tags-0.1.2-20261107.fb2k-component
+foo_floating_clouds-0.2.5-20261107.fb2k-component
+foo_floating_clouds_tags-0.2.5-20261107.fb2k-component
 foo_playlist_organizer-0.1.2-20261107.fb2k-component
 ```
 
 `<版本>` 取自各组件 `DECLARE_COMPONENT_VERSION` 的第二个参数，改版本只改那一处。包**内部**的 DLL 与 manifest
 仍用规范的 `foo_*.dll` 名——只有外层安装文件带后缀，因为 foobar2000 的 manifest 是按 DLL 名查找的。
+
+非 Release 配置会带标记，避免覆盖发布包：`-Configuration Debug` 产出 `...-20261107-debug.fb2k-component`；
+`package-all.ps1` 则把平台名放在日期之后（`...-20261107-x64`）。
 
 每次打包还会重写 `dist/SHA256SUMS.txt`，覆盖 `dist/` 下所有安装包（`sha256sum` 格式：`<hash>  <文件名>`，
 LF 换行、无 BOM），可直接校验：
