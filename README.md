@@ -129,6 +129,30 @@ The foobar2000 SDK is **not bundled** with this repository. Download the matchin
 
 The root `build.ps1` builds all three components in one run and collects the packages into the root `dist/` folder.
 
+### Release artifacts
+
+Packaging names every install file after its component, version and build date:
+
+```
+<component>-<version>-<yyyyMMdd>.fb2k-component
+foo_floating_clouds-0.2.0-20261107.fb2k-component
+foo_floating_clouds_tags-0.1.2-20261107.fb2k-component
+foo_playlist_organizer-0.1.2-20261107.fb2k-component
+```
+
+`<version>` comes from that component's `DECLARE_COMPONENT_VERSION`, so bumping it there is enough. Inside the
+package the DLL keeps its canonical `foo_*.dll` name and manifest — only the install file carries the suffix,
+because foobar2000's manifest lookup depends on the DLL name.
+
+Every packaging run also rewrites `dist/SHA256SUMS.txt` over all packages in `dist/` (`sha256sum` format:
+`<hash>  <filename>`, LF, no BOM), so the downloads can be verified:
+
+```
+cd dist
+sha256sum -c SHA256SUMS.txt          # Linux / Git Bash / MSYS
+Get-FileHash *.fb2k-component -Algorithm SHA256   # PowerShell
+```
+
 For AI or debugging workflows, use `build_agent.ps1`. It is non-interactive, builds sequentially, and prints MSBuild errors and warnings without the interactive menu or extra output redirection:
 
 ```
@@ -152,11 +176,12 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Language zh -Package   # Chi
 
 Common parameters (combinable, scriptable / CI-friendly):
 
-- `-Package` package `.fb2k-component` and collect into root `dist/`
+- `-Package` package `.fb2k-component` into root `dist/` with the release naming, then refresh `dist/SHA256SUMS.txt`
 - `-Deploy -Foobar2000Dir "<foobar2000 root>"` deploy the DLLs into foobar2000
 - `-Component all|floating_clouds|organizing_playlists|tags` pick components (default all)
 - `-Language en|zh` pick prompt language (default en)
 - `-Configuration Debug`, `-Platform Win32`, `-Clean`, `-CleanOnly`, `-Force`
+- `-VsInstallDir <path>`, `-PlatformToolset <toolset>` override the auto-detected Visual Studio / toolset
 - `-Interactive` force the interactive menu
 
 Running with no action switches starts an interactive menu (pick prompt language, then build form: DLL only / package / deploy / clean / all, then components). Each component's build output is written to `logs/<component>-<timestamp>.log`. Alternatively open `foo_floating_clouds/foo_floating_clouds.vcxproj` (etc.) in Visual Studio and build.

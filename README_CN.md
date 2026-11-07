@@ -125,6 +125,29 @@ foobar2000 SDK **不随仓库提供**。从 <https://www.foobar2000.org/SDK> 下
 
 根目录的 `build.ps1` 一次构建三个组件，并把打包结果收集到根目录 `dist/`。
 
+### 发布产物命名与校验
+
+打包出来的安装文件名带上组件名、版本号与构建日期：
+
+```
+<组件>-<版本>-<yyyyMMdd>.fb2k-component
+foo_floating_clouds-0.2.0-20261107.fb2k-component
+foo_floating_clouds_tags-0.1.2-20261107.fb2k-component
+foo_playlist_organizer-0.1.2-20261107.fb2k-component
+```
+
+`<版本>` 取自各组件 `DECLARE_COMPONENT_VERSION` 的第二个参数，改版本只改那一处。包**内部**的 DLL 与 manifest
+仍用规范的 `foo_*.dll` 名——只有外层安装文件带后缀，因为 foobar2000 的 manifest 是按 DLL 名查找的。
+
+每次打包还会重写 `dist/SHA256SUMS.txt`，覆盖 `dist/` 下所有安装包（`sha256sum` 格式：`<hash>  <文件名>`，
+LF 换行、无 BOM），可直接校验：
+
+```
+cd dist
+sha256sum -c SHA256SUMS.txt          # Linux / Git Bash / MSYS
+Get-FileHash *.fb2k-component -Algorithm SHA256   # PowerShell
+```
+
 给 AI 或调试流程用 `build_agent.ps1`：非交互、顺序构建，直接打印 MSBuild 的错误与警告，没有交互菜单和额外重定向：
 
 ```
@@ -148,11 +171,12 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Language zh -Package   # 中
 
 常用参数（可组合，便于脚本化 / CI）：
 
-- `-Package` 打包 `.fb2k-component` 并收集到根目录 `dist/`
+- `-Package` 按发布命名打包到根目录 `dist/`，并刷新 `dist/SHA256SUMS.txt`
 - `-Deploy -Foobar2000Dir "<foobar2000 根目录>"` 把 DLL 部署进 foobar2000
 - `-Component all|floating_clouds|organizing_playlists|tags` 选择组件（默认 all）
 - `-Language en|zh` 提示语言（默认 en）
 - `-Configuration Debug`、`-Platform Win32`、`-Clean`、`-CleanOnly`、`-Force`
+- `-VsInstallDir <路径>`、`-PlatformToolset <工具集>` 覆盖自动探测到的 Visual Studio / 工具集
 - `-Interactive` 强制进入交互菜单
 
 不带动作参数运行会进入交互菜单（先选提示语言，再选构建形式：仅 DLL / 打包 / 部署 / 清理 / 全部，最后选组件）。

@@ -66,6 +66,9 @@ Set-StrictMode -Version Latest
 $WorkspaceRoot = (Resolve-Path $PSScriptRoot).Path
 Set-Location $WorkspaceRoot
 
+# Release naming (<component>-<version>-<yyyyMMdd>) + SHA256SUMS.txt.
+. (Join-Path $WorkspaceRoot 'build_common.ps1')
+
 # ---------------------------------------------------------------------------
 # Toolchain detection
 # ---------------------------------------------------------------------------
@@ -263,6 +266,23 @@ foreach ($comp in $Selected) {
     } catch {
         Write-Agent ("ERROR: {0}" -f $_.Exception.Message) Red
         $failed += $comp.Dll
+    }
+}
+
+# Release artifacts: apply the naming rule and produce the checksum file.
+if ($Package -and $failed.Count -eq 0) {
+    $map = @{}
+    foreach ($comp in $Selected) {
+        $map[$comp.Dll] = Split-Path ($comp.Project) -Parent
+    }
+    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map
+    Write-Host ''
+    Write-Agent 'Release artifacts:' Cyan
+    foreach ($a in $res.Artifacts) {
+        Write-Agent ('  {0}  (v{1})' -f $a.Name, $a.Version) Green
+    }
+    foreach ($line in (Format-Sha256Report -DistDir (Join-Path $WorkspaceRoot 'dist'))) {
+        Write-Host $line
     }
 }
 

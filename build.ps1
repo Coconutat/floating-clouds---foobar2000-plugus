@@ -74,7 +74,8 @@
 param(
     [ValidateSet('Debug', 'Release')] [string] $Configuration = 'Release',
     [ValidateSet('x64', 'Win32')]      [string] $Platform     = 'x64',
-    [string] $VsInstallDir = 'D:\APPS\Visual Studio',
+    [string] $VsInstallDir = '',
+    [string] $PlatformToolset = '',
     [switch] $Clean,
     [switch] $CleanOnly,
     [switch] $Force,
@@ -103,6 +104,9 @@ if ($isAdmin) {
 
 # Workspace root = folder containing this script.
 $WorkspaceRoot = (Resolve-Path $PSScriptRoot).Path
+
+# Release naming (<component>-<version>-<yyyyMMdd>) + SHA256SUMS.txt.
+. (Join-Path $WorkspaceRoot 'build_common.ps1')
 Set-Location $WorkspaceRoot
 
 # Never operate at a drive root (e.g. C:\) — a safety net against catastrophic cleans.
@@ -110,6 +114,12 @@ $rootItem = Get-Item $WorkspaceRoot
 if ($null -eq $rootItem.Parent) {
     throw "Refusing to operate at a drive root: $WorkspaceRoot"
 }
+
+# Toolchain: auto-detect Visual Studio and the platform toolset when not given
+# (a hardcoded VS path and a forced VisualStudioVersion both break on machines
+# that only have a newer toolset installed).
+$VsInstallDir = Resolve-VsInstallDir -VsInstallDir $VsInstallDir
+if (-not $PlatformToolset) { $PlatformToolset = Get-InstalledPlatformToolset -VsDir $VsInstallDir }
 
 # Resolve vcvarsall.bat from the chosen VS install.
 $vcvars = Join-Path $VsInstallDir 'VC\Auxiliary\Build\vcvarsall.bat'
@@ -354,8 +364,9 @@ function Invoke-BuildComponent {
         throw "Project file not found: $projectFile"
     }
 
-    $cmdLine = '"{0}" {1} && "{2}" "{3}" /p:Configuration={4} /p:Platform={5} /p:VisualStudioVersion=17.0 /m' `
+    $cmdLine = '"{0}" {1} && "{2}" "{3}" /p:Configuration={4} /p:Platform={5} /m' `
         -f $vcvars, $arch, $msbuild, $projectFile, $Configuration, $Platform
+    if ($PlatformToolset) { $cmdLine += (' /p:PlatformToolset={0}' -f $PlatformToolset) }
     Write-Log ">> $cmdLine" Cyan
 
     if ($WhatIfPreference) { return }   # -WhatIf: just show, don't run
@@ -365,7 +376,8 @@ function Invoke-BuildComponent {
     $bat = Join-Path $env:TEMP "build_${componentName}_$PID.bat"
     try {
         $lineVcvars = 'call "{0}" {1}' -f $vcvars, $arch
-        $lineMsbuild = '"{0}" "{1}" /p:Configuration={2} /p:Platform={3} /p:VisualStudioVersion=17.0 /m' -f $msbuild, $projectFile, $Configuration, $Platform
+        $lineMsbuild = '"{0}" "{1}" /p:Configuration={2} /p:Platform={3} /m' -f $msbuild, $projectFile, $Configuration, $Platform
+        if ($PlatformToolset) { $lineMsbuild += (' /p:PlatformToolset={0}' -f $PlatformToolset) }
         $content = '@echo off' + "`r`n" + $lineVcvars + "`r`n" + 'if errorlevel 1 exit /b %errorlevel%' + "`r`n" + $lineMsbuild + "`r`n" + 'exit /b %errorlevel%'
         Set-Content -LiteralPath $bat -Value $content -Encoding ASCII
         # Capture cmd.exe's raw bytes to temp files (bypasses PowerShell 5.1's
@@ -426,6 +438,14 @@ function Invoke-ComponentScript {
         '-VsInstallDir', ('"{0}"' -f $VsInstallDir),
         '-MinVersion', $MinVersion
     )
+    # Forward the toolset only if the child script declares it, so this stays
+    # compatible with older per-component scripts.
+    if ($PlatformToolset) {
+        $childText = Get-Content -LiteralPath $scriptPath -Raw -ErrorAction SilentlyContinue
+        if ($childText -and $childText -match '\$PlatformToolset') {
+            $cmdParts += '-PlatformToolset'; $cmdParts += $PlatformToolset
+        }
+    }
     if ($Package) { $cmdParts += '-Package' }
     if ($Deploy -and -not [string]::IsNullOrWhiteSpace($Foobar2000Dir)) {
         $cmdParts += '-Deploy'; $cmdParts += '-Foobar2000Dir'; $cmdParts += ('"{0}"' -f $Foobar2000Dir)
@@ -700,6 +720,24 @@ Write-Host ''
 Write-Log ($T['summary'] -f $okCount, $failCount) Cyan
 if ($failCount -gt 0) {
     Write-Log ($T['failed_list'] -f ($failedNames -join ', ')) Red
+}
+
+# Release artifacts: apply the naming rule and write the checksum file.
+if ($Package) {
+    $map = @{}
+    foreach ($c in $AllComponents) {
+        $map[$c.ComponentName] = Join-Path $WorkspaceRoot $c.Folder
+    }
+    $res = Export-ReleaseArtifacts -DistDir (Join-Path $WorkspaceRoot 'dist') -Components $map
+    if ($res.Artifacts.Count -gt 0) {
+        Write-Log 'Release artifacts:' Cyan
+        foreach ($a in $res.Artifacts) {
+            Write-Log ('  {0}  (v{1})' -f $a.Name, $a.Version) Green
+        }
+        foreach ($line in (Format-Sha256Report -DistDir (Join-Path $WorkspaceRoot 'dist'))) {
+            Write-Host $line
+        }
+    }
 }
 
 Write-Host ''
