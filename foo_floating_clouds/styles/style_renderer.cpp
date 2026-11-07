@@ -71,11 +71,13 @@ void StyleRenderer::render_full(const CSize& size)
 
 void StyleRenderer::draw_button_row(const CSize& size)
 {
+    // Row geometry is single-sourced in config.h (same helpers used by
+    // FloatingCloudsWindow::hit_test_button), so drawing and hit-testing cannot
+    // drift apart. BUTTON_COUNT is still needed for the array bounds.
     const int btn_count = BUTTON_COUNT;
     const int btn_spacing = BUTTON_SPACING;
-    const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
-    float btn_start_x = ((float)size.cx - total_width) / 2;
-    float btn_y = (float)button_row_y(size.cy);
+    const float btn_start_x = ((float)size.cx - (float)button_row_width()) / 2;
+    const float btn_y = (float)button_row_y(size.cy);
 
     // prev, play/pause, next, mute, playlist picker
     const wchar_t* icons[btn_count] = { L"\u23EE", L"\u23EF", L"\u23ED", L"\U0001F507", L"\u2630" };
@@ -215,50 +217,8 @@ void StyleRenderer::render_visualizer(const CSize& size)
     // the caption — the tallest bars must not poke above the rounded card.
     const float bar_area_bottom = (float)button_row_y(size.cy) - 8.0f - 16.0f - 8.0f;
     const float bar_area_top = inset + 8.0f;
-    const float bar_area_h = bar_area_bottom - bar_area_top;
-    const int bar_count = 32;
-    float bar_w = (avail_w - (bar_count - 1)) / bar_count;
+    draw_spectrum_bars(pad, avail_w, bar_area_top, bar_area_bottom);
 
-    // Real-time FFT spectrum (0..1 per bar); bars stay flat when playback is
-    // stopped or no spectrum is available yet.
-    float bars[bar_count] = {};
-    m_window->get_visual_spectrum(bars, bar_count);
-    // One-pole low-pass per bar (plan 003): raw FFT values jitter; smoothed
-    // bars glide instead of jumping.
-    float smoothed[bar_count] = {};
-    m_window->smooth_spectrum(bars, smoothed, bar_count);
-
-    for (int i = 0; i < bar_count; i++) {
-        // dB-normalized bars (0..1) need only a touch of gain; the old
-        // 1.8x boost was compensating for raw linear FFT magnitudes and
-        // made everything clip once the spectrum became accurate.
-        float v = smoothed[i] * 1.1f;
-        if (v < 0.0f) v = 0.0f;
-        else if (v > 1.0f) v = 1.0f;
-        float h = v * bar_area_h;
-        float x = pad + i * (bar_w + 1);
-        float y = bar_area_bottom - h;
-
-        float intensity = (float)i / bar_count;
-        // MD3 accent ramp: primary (lavender) -> tertiary (pink)
-        const uint32_t c1 = m_renderer->skin().primary;
-        const uint32_t c2 = m_renderer->skin().tertiary;
-        float r = (float)((c1 >> 16) & 0xFF) * (1.0f - intensity) + (float)((c2 >> 16) & 0xFF) * intensity;
-        float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
-        float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
-        m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
-        // Rounded bar tops (max 2px); square off the baseline so bars sit
-        // flush instead of poking past the card bottom.
-        const float bar_r = (std::min)(bar_w / 2.0f, 2.0f);
-        m_renderer->get_render_target()->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(x, y, x + bar_w, bar_area_bottom), bar_r, bar_r),
-            m_renderer->get_brush());
-        if (y + bar_r < bar_area_bottom) {
-            m_renderer->get_render_target()->FillRectangle(
-                D2D1::RectF(x, y + bar_r, x + bar_w, bar_area_bottom), m_renderer->get_brush());
-        }
-    }
-    
     float text_y = bar_area_bottom + 8;
     pfc::string8 display;
     display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
@@ -304,40 +264,10 @@ void StyleRenderer::render_visualizer_art(const CSize& size)
     if (bar_area_h < 8.0f) return;
 
     const float avail_w = (float)size.cx - pad * 2;
-    const int bar_count = 32;
-    const float bar_w = (avail_w - (bar_count - 1)) / bar_count;
-
-    float bars[bar_count] = {};
-    m_window->get_visual_spectrum(bars, bar_count);
-    float smoothed[bar_count] = {};
-    m_window->smooth_spectrum(bars, smoothed, bar_count);
-
     // Wave colors: the same primary -> tertiary ramp the Visualizer uses.
     const uint32_t c1 = m_renderer->skin().primary;
     const uint32_t c2 = m_renderer->skin().tertiary;
-
-    for (int i = 0; i < bar_count; i++) {
-        float v = smoothed[i] * 1.1f;
-        if (v < 0.0f) v = 0.0f;
-        else if (v > 1.0f) v = 1.0f;
-        const float h = v * bar_area_h;
-        const float x = pad + i * (bar_w + 1);
-        const float y = bar_area_bottom - h;
-
-        const float intensity = (float)i / bar_count;
-        const float r = (float)((c1 >> 16) & 0xFF) * (1.0f - intensity) + (float)((c2 >> 16) & 0xFF) * intensity;
-        const float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
-        const float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
-        m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
-        const float bar_r = (std::min)(bar_w / 2.0f, 2.0f);
-        m_renderer->get_render_target()->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(x, y, x + bar_w, bar_area_bottom), bar_r, bar_r),
-            m_renderer->get_brush());
-        if (y + bar_r < bar_area_bottom) {
-            m_renderer->get_render_target()->FillRectangle(
-                D2D1::RectF(x, y + bar_r, x + bar_w, bar_area_bottom), m_renderer->get_brush());
-        }
-    }
+    draw_spectrum_bars(pad, avail_w, bar_area_top, bar_area_bottom);
 
     // Progress line: a thin rounded bar whose fill is a primary->tertiary
     // gradient spanning the full width, so the leading edge transitions
@@ -353,6 +283,59 @@ void StyleRenderer::render_visualizer_art(const CSize& size)
                          m_renderer->skin().progress_track_alpha));
 
     draw_button_row(size);
+}
+
+// 32-bar FFT spectrum, shared by Visualizer and VisualizerArt: same gain,
+// clamp, primary->tertiary ramp and rounded-top bars; only the band rectangle
+// differs between the two styles.
+void StyleRenderer::draw_spectrum_bars(float x, float width, float bar_area_top, float bar_area_bottom)
+{
+    const float bar_area_h = bar_area_bottom - bar_area_top;
+    if (bar_area_h <= 1.0f || width <= 0.0f) return;
+
+    const int bar_count = 32;
+    const float bar_w = (width - (bar_count - 1)) / bar_count;
+
+    // Real-time FFT spectrum (0..1 per bar); bars stay flat when playback is
+    // stopped or no spectrum is available yet.
+    float bars[bar_count] = {};
+    m_window->get_visual_spectrum(bars, bar_count);
+    // One-pole low-pass per bar (plan 003): raw FFT values jitter; smoothed
+    // bars glide instead of jumping.
+    float smoothed[bar_count] = {};
+    m_window->smooth_spectrum(bars, smoothed, bar_count);
+
+    const uint32_t c1 = m_renderer->skin().primary;
+    const uint32_t c2 = m_renderer->skin().tertiary;
+    // Rounded bar tops (max 2px); square off the baseline so bars sit flush
+    // instead of poking past the card bottom.
+    const float bar_r = (std::min)(bar_w / 2.0f, 2.0f);
+
+    for (int i = 0; i < bar_count; i++) {
+        // dB-normalized bars (0..1) need only a touch of gain; the old 1.8x
+        // boost compensated for raw linear FFT magnitudes and clipped once the
+        // spectrum became accurate.
+        float v = smoothed[i] * 1.1f;
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+        const float h = v * bar_area_h;
+        const float bx = x + i * (bar_w + 1);
+        const float by = bar_area_bottom - h;
+
+        // MD3 accent ramp: primary (lavender) -> tertiary (pink).
+        const float intensity = (float)i / bar_count;
+        const float r = (float)((c1 >> 16) & 0xFF) * (1.0f - intensity) + (float)((c2 >> 16) & 0xFF) * intensity;
+        const float g = (float)((c1 >> 8)  & 0xFF) * (1.0f - intensity) + (float)((c2 >> 8)  & 0xFF) * intensity;
+        const float b = (float)((c1)       & 0xFF) * (1.0f - intensity) + (float)((c2)       & 0xFF) * intensity;
+        m_renderer->get_brush()->SetColor(D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 0.7f));
+        m_renderer->get_render_target()->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(bx, by, bx + bar_w, bar_area_bottom), bar_r, bar_r),
+            m_renderer->get_brush());
+        if (by + bar_r < bar_area_bottom) {
+            m_renderer->get_render_target()->FillRectangle(
+                D2D1::RectF(bx, by + bar_r, bx + bar_w, bar_area_bottom), m_renderer->get_brush());
+        }
+    }
 }
 
 void StyleRenderer::render_lyrics_line(const CSize& size)

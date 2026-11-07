@@ -159,7 +159,8 @@ inline bool style_has_buttons(FloatingStyle s) {
 }
 
 // One-time migration from the old 8-style numbering (Mini=0..LyricsLine=7)
-// to the new 6-style numbering. Applied when loading the persisted style.
+// to the current 7-style enum. VisualizerArt (6) was added later and has no
+// legacy value, so nothing maps onto it; unknown values fall back to Full.
 inline int32_t migrate_style(int32_t old) {
     switch (old) {
         case 0: case 3: return 0; // Mini, MinimalLine -> Minimal
