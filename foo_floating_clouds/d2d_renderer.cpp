@@ -211,6 +211,16 @@ bool D2DRenderer::create_shadow()
 
 bool D2DRenderer::begin_draw()
 {
+    // A new cover may have arrived during the last frame. Swap the seed here, at
+    // the frame boundary, so one frame never mixes two schemes.
+    if (m_pending_valid) {
+        m_pending_valid = false;
+        if (m_pending_seed != m_album_seed) {
+            m_album_seed = m_pending_seed;
+            rebuild_tokens();
+        }
+    }
+
     if (!create_resources()) return false;
 
     m_marquee_active = false; // reset per frame
@@ -299,6 +309,25 @@ void D2DRenderer::set_skin(FloatingSkin skin)
     FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Mist ? "Mist" : "MD3");
 }
 
+void D2DRenderer::rebuild_tokens()
+{
+    m_use_dynamic = m_album && m_album_seed != 0;
+    if (!m_use_dynamic) return;
+    m_tokens = (m_skin == FloatingSkin::Mist) ? dyn::scheme_mist(m_album_seed, m_light)
+                                              : dyn::scheme_md3(m_album_seed, m_light);
+}
+
+void D2DRenderer::set_color_context(bool album, bool light)
+{
+    if (album == m_album && light == m_light) return;
+    m_album = album;
+    m_light = light;
+    rebuild_tokens();
+    FB2K_console_formatter() << "Floating Clouds: colour context "
+        << (light ? "light" : "dark")
+        << (album ? ", dynamic from cover" : ", static scheme");
+}
+
 void D2DRenderer::set_light(bool light)
 {
     if (m_light == light) return;
@@ -309,6 +338,8 @@ void D2DRenderer::set_light(bool light)
 
 void D2DRenderer::rebuild_skin_resources()
 {
+    // The scheme depends on the skin (MD3 tint vs Mist accents), so regenerate.
+    rebuild_tokens();
     // Per-skin resources: shadow bitmaps, glass gradient brushes, cached fonts.
     release_glass_brushes();
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
@@ -671,6 +702,16 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
                                             pxb[3] = (uint8_t)((pxb[3] * cov255) / 255);
                                         }
                                     }
+                                    // "Monet" extraction: derive the dynamic
+                                    // colour seed from this cover. Done here
+                                    // because this is the only place the decoded
+                                    // pixels exist; applied at the next frame.
+                                    m_pending_seed = dyn::seed_from_bgra(
+                                        (const uint8_t*)buf.data(), (int)aw, (int)ah,
+                                        (int)(aw * 4),
+                                        m_album_seed ? m_album_seed : dyn::kBaselineSeed);
+                                    m_pending_valid = true;
+
                                     m_render_target->CreateBitmap(
                                         D2D1::SizeU(aw, ah), buf.data(), aw * 4,
                                         D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -754,10 +795,13 @@ void D2DRenderer::draw_button(float x, float y, float size, icons::Kind icon,
 
     // Vector glyph. One optical size for every icon (0.70 of the hit target,
     // well inside the 24px circle), and it shrinks with the press scale so the
-    // glyph and the disc stay locked together.
+    // glyph and the disc stay locked together. An active button is a filled
+    // icon button in MD3, so its glyph switches to the paired on-colour.
     if (ID2D1PathGeometry* geo = icon_geometry(icon)) {
+        const D2D1_COLOR_F glyph =
+            is_active ? D2DRenderer::hex(t.on_button_active, 1.0f) : color;
         icons::draw(m_render_target, geo, m_brush, D2D1::Point2F(cx, cy),
-                    rr * 2.0f * 0.70f, color);
+                    rr * 2.0f * 0.70f, glyph);
     }
 }
 

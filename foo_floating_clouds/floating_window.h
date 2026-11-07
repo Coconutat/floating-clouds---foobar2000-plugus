@@ -92,12 +92,17 @@ public:
     void set_skin(FloatingSkin skin);
     void cycle_skin();
 
-    // Set color mode (Follow / Dark / Light). Hot-reloads the active skin's
-    // light/dark token set.
+    // Set color mode (Follow / Dark / Light / Album). Hot-reloads the active
+    // skin's token set, including a scheme derived from the cover art.
     void set_color_mode(FloatingColorMode mode);
     FloatingColorMode get_color_mode() const { return m_color_mode; }
-    // Effective light mode: explicit Light, or Follow + foobar2000 is light.
+    // Effective light mode: explicit Light, or Follow/Album + foobar2000 is light.
     bool effective_light() const;
+
+    // Push the current colour mode + appearance into every renderer (this window
+    // and the playlist panel). Cheap: each renderer returns immediately when
+    // nothing changed.
+    void sync_color_context();
 
     // Resolve and apply the active font family (custom cfg string, else
     // foobar2000's default UI font, else Segoe UI). Safe to call repeatedly.

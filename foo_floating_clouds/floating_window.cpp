@@ -105,7 +105,7 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
         m_color_mode = (saved >= 0 && saved < (int)FloatingColorMode::Count)
             ? static_cast<FloatingColorMode>(saved) : static_cast<FloatingColorMode>(DEFAULT_COLOR_MODE);
         if ((int)m_color_mode != saved) cfg_mode = (int)m_color_mode;
-        D2DRenderer::set_light(effective_light());
+        sync_color_context();
     }
     // Apply the font family (custom cfg, else foobar2000's default UI font).
     refresh_font_family();
@@ -196,14 +196,9 @@ bool FloatingCloudsWindow::render_now()
     if (m_vis == Visibility::Hidden) return false;
 
     // Follow foobar2000 light/dark changes between paints (m_dark_hooks
-    // updates itself via ui_config callback; we just compare + apply).
-    const bool light = effective_light();
-    if (light != is_light()) {
-        D2DRenderer::set_light(light);
-        if (m_playlist_panel && m_playlist_panel->IsWindow()) {
-            m_playlist_panel->set_light(light);
-        }
-    }
+    // updates itself via ui_config callback; we just compare + apply). Cheap:
+    // sync_color_context returns immediately when nothing changed.
+    sync_color_context();
 
     if (!begin_draw()) {
         FB2K_console_formatter() << "Floating Clouds: render_now begin_draw FAILED";
@@ -725,11 +720,22 @@ void FloatingCloudsWindow::set_skin(FloatingSkin skin)
     // Keep the playlist panel on the same skin + light/dark mode + font.
     if (m_playlist_panel && m_playlist_panel->IsWindow()) {
         m_playlist_panel->set_skin(skin);
-        m_playlist_panel->set_light(effective_light());
+        m_playlist_panel->set_color_context(m_color_mode == FloatingColorMode::Album,
+                                            effective_light());
         m_playlist_panel->set_font_family(get_font_family());
     }
 
     Invalidate();
+}
+
+void FloatingCloudsWindow::sync_color_context()
+{
+    const bool album = (m_color_mode == FloatingColorMode::Album);
+    const bool light = effective_light();
+    D2DRenderer::set_color_context(album, light);
+    if (m_playlist_panel && m_playlist_panel->IsWindow()) {
+        m_playlist_panel->set_color_context(album, light);
+    }
 }
 
 void FloatingCloudsWindow::set_color_mode(FloatingColorMode mode)
@@ -740,10 +746,9 @@ void FloatingCloudsWindow::set_color_mode(FloatingColorMode mode)
     cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
     cfg_mode = static_cast<int32_t>(mode);
 
-    // Apply the effective light/dark token set everywhere.
-    D2DRenderer::set_light(effective_light());
+    // Apply the effective token set everywhere (dynamic album schemes included).
+    sync_color_context();
     if (m_playlist_panel && m_playlist_panel->IsWindow()) {
-        m_playlist_panel->set_light(effective_light());
         m_playlist_panel->set_font_family(get_font_family());
     }
 
@@ -755,7 +760,8 @@ bool FloatingCloudsWindow::effective_light() const
     switch (m_color_mode) {
         case FloatingColorMode::Light: return true;
         case FloatingColorMode::Dark:  return false;
-        case FloatingColorMode::Follow:
+        case FloatingColorMode::Album:   // the cover supplies the hue, not the
+        case FloatingColorMode::Follow:  // appearance
         default:
             // m_dark_hooks auto-updates from foobar2000's ui_config callback.
             return !m_dark_hooks.IsDark();

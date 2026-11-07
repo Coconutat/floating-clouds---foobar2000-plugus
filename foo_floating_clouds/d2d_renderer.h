@@ -6,6 +6,7 @@
 #include "skin_theme.h"
 #include "styles/glass_card.h"
 #include "styles/icons.h"
+#include "dynamic_color.h"
 
 // ============================================================================
 // D2DRenderer - Direct2D rendering engine for the floating window
@@ -52,8 +53,21 @@ public:
     // Light mode: use the skin's light token set (text, glass, shadows flip
     // together). Rebuilds the same per-skin resources.
     void set_light(bool light);
+
+    // Dynamic (album) colour. `album` switches the token source to a scheme
+    // generated from the current cover; the seed itself arrives from
+    // draw_album_art and is applied at the start of the next frame so a frame
+    // never mixes two schemes. Cheap to call every frame.
+    void set_color_context(bool album, bool light);
+    bool dynamic_color() const { return m_use_dynamic; }
+    uint32_t album_seed() const { return m_album_seed; }
     bool is_light() const { return m_light; }
-    const SkinTokens& skin() const { return get_skin_tokens(m_skin, m_light); }
+    // Active tokens: the static per-skin set, or the scheme generated from the
+    // album cover when dynamic colour is on.
+    const SkinTokens& skin() const
+    {
+        return m_use_dynamic ? m_tokens : get_skin_tokens(m_skin, m_light);
+    }
     FloatingSkin get_skin() const { return m_skin; }
 
     // Font family used by all cached text formats. Empty/unknown falls back
@@ -196,6 +210,15 @@ protected:
 
     // Set when the last frame scrolled any long text; keeps the frame loop alive
     bool m_marquee_active = false;
+
+    // Dynamic colour state (album-derived scheme).
+    bool m_album = false;
+    bool m_use_dynamic = false;
+    SkinTokens m_tokens{};
+    uint32_t m_album_seed = 0;
+    uint32_t m_pending_seed = 0;
+    bool m_pending_valid = false;
+    void rebuild_tokens();
 
     // Active visual skin
     FloatingSkin m_skin = FloatingSkin::MD3;

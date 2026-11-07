@@ -26,6 +26,10 @@ struct SkinTokens {
     uint32_t primary;
     uint32_t tertiary;
     uint32_t error;
+    // Icon colour on an ACTIVE control button. MD3 fills the active icon button
+    // with `primary`, so its glyph must be `on-primary`; a skin that only tints
+    // the background keeps the accent glyph.
+    uint32_t on_button_active;
 
     // Control-button fills (draw_button): inactive / active (pressed uses a
     // state layer on top, see draw_button).
@@ -100,9 +104,10 @@ constexpr SkinTokens md3_skin = {
     md3::primary,                    // primary
     md3::tertiary,                   // tertiary
     md3::error,                      // error
+    md3::on_primary,                 // on_button_active (filled icon button)
     md3::on_surface_variant, 0.12f,  // button_fill (inactive)
-    md3::primary, 0.20f,             // button_fill_active
-    md3::on_surface_variant, 0.25f,  // progress_track
+    md3::primary, 1.00f,             // button_fill_active (MD3 filled icon button)
+    0x4A4458, 1.0f,                  // progress_track (secondary-container dark)
     false,                           // glass (opaque card)
     false,                           // superellipse (circular corner)
     md3::surface_container, 1.0f,    // card_fill_top
@@ -134,9 +139,10 @@ constexpr SkinTokens md3_skin_light = {
     0x6750A4,                        // primary (primary40)
     0x7D5260,                        // tertiary (tertiary40)
     0xB3261E,                        // error (error40)
+    0xFFFFFF,                        // on_button_active (on-primary)
     0x49454F, 0.12f,                 // button_fill (inactive)
-    0x6750A4, 0.20f,                 // button_fill_active
-    0x49454F, 0.25f,                 // progress_track
+    0x6750A4, 1.00f,                 // button_fill_active
+    0xE8DEF8, 1.00f,                 // progress_track (secondary-container light)
     false,                           // glass (opaque card)
     false,                           // superellipse (circular corner)
     0xF3EDF7, 1.0f,                  // card_fill_top
@@ -177,7 +183,9 @@ constexpr SkinTokens mist_skin = {
     0xA8A8B0,                        // on_surface_variant
     0x0A84FF,                        // primary (system blue, dark)
     0xFF375F,                        // tertiary (system pink, dark)
-    0xFF453A,                        // error (iOS systemRed dark)
+    0xFF453A,                        // error (system red, dark)
+    0x0A84FF,                        // on_button_active (tinted fill keeps the
+                                     // accent glyph, so it stays blue)
     0xFFFFFF, 0.16f,                 // button_fill (frosted white circle)
     0x0A84FF, 0.28f,                 // button_fill_active (vibrant blue fill)
     0xFFFFFF, 0.20f,                 // progress_track
@@ -212,7 +220,8 @@ constexpr SkinTokens mist_skin_light = {
     0x4E4E58,                        // on_surface_variant
     0x007AFF,                        // primary (system blue, light)
     0xFF2D55,                        // tertiary (system pink, light)
-    0xFF3B30,                        // error (iOS systemRed light)
+    0xFF3B30,                        // error (system red, light)
+    0x007AFF,                        // on_button_active (accent glyph)
     0x000000, 0.07f,                 // button_fill
     0x007AFF, 0.18f,                 // button_fill_active
     0x000000, 0.13f,                 // progress_track

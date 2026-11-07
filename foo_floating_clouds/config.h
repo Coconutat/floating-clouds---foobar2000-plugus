@@ -70,7 +70,11 @@ enum class FloatingColorMode : int32_t {
     Follow = 0,   // follow foobar2000 dark/light setting (default)
     Dark = 1,
     Light = 2,
-    Count = 3
+    // MD3 dynamic colour: the whole scheme is derived from the album cover.
+    // Light/dark still follows foobar2000, because the scheme is generated for
+    // both appearances and the cover only supplies the hue.
+    Album = 3,
+    Count = 4
 };
 
 // Hotkey defaults (all customizable in Preferences > Components > Floating Clouds)
