@@ -8,11 +8,11 @@
 // ============================================================================
 
 namespace {
-// Corner radius for album art, scaled to the display size (plan 011 follow-up):
-// size/16 is just enough rounding to see on small thumbnails; large hero art
-// keeps the surface card radius (per-skin corner_card).
+// Corner radius for album art, scaled to the display size: a 64px thumbnail
+// with a 4px radius reads as a hard square next to the card's continuous
+// corners, so it scales with the tile and only clamps at the card radius.
 float art_corner_radius(float size, float card_corner) {
-    return (std::min)(card_corner, (std::max)(4.0f, size * 0.003125f)); // 1/32
+    return (std::min)(card_corner, (std::max)(4.0f, size * 0.14f));
 }
 } // namespace
 
@@ -77,6 +77,9 @@ void D2DRenderer::release_resources()
     if (m_small_left_format) { m_small_left_format->Release(); m_small_left_format = nullptr; }
     if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
+    for (int i = 0; i < icons::kKindCount; i++) {
+        if (m_icon_geo[i]) { m_icon_geo[i]->Release(); m_icon_geo[i] = nullptr; }
+    }
     m_mode = PresentMode::None;
     m_rebuilds++;
     FB2K_console_formatter() << "Floating Clouds: present resources released (rebuild #" << (int)m_rebuilds << ")";
@@ -293,7 +296,7 @@ void D2DRenderer::set_skin(FloatingSkin skin)
     if (m_skin == skin) return;
     m_skin = skin;
     rebuild_skin_resources();
-    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Apple ? "Apple" : "MD3");
+    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Mist ? "Mist" : "MD3");
 }
 
 void D2DRenderer::set_light(bool light)
@@ -706,7 +709,19 @@ void D2DRenderer::draw_album_art(float x, float y, float size, album_art_data_pt
     }
 }
 
-void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_text,
+ID2D1PathGeometry* D2DRenderer::icon_geometry(icons::Kind kind)
+{
+    const int i = (int)kind;
+    if (i < 0 || i >= icons::kKindCount) return nullptr;
+    if (!m_icon_geo[i]) {
+        if (!icons::build_unit_geometry(m_d2d_factory, kind, &m_icon_geo[i])) {
+            m_icon_geo[i] = nullptr;
+        }
+    }
+    return m_icon_geo[i];
+}
+
+void D2DRenderer::draw_button(float x, float y, float size, icons::Kind icon,
                                bool is_active, const D2D1_COLOR_F& color, int state, float state_alpha)
 {
     const float cx = x + size / 2.0f;
@@ -736,19 +751,13 @@ void D2DRenderer::draw_button(float x, float y, float size, const wchar_t* icon_
         m_render_target->FillEllipse(
             D2D1::Ellipse(D2D1::Point2F(cx, cy), rr, rr), m_brush);
     }
-    
-    // Icon text (simple Unicode symbols or just text), scaled with the button
-    if (icon_text && wcslen(icon_text) > 0) {
-        m_brush->SetColor(color);
-        
-        // Use default format for icons
-        auto format = get_small_format();
-        if (format) {
-            D2D1_RECT_F text_rect = D2D1::RectF(cx - rr, cy - rr, cx + rr, cy + rr);
-            m_render_target->DrawText(icon_text, (UINT32)wcslen(icon_text), 
-                                       format, text_rect, m_brush,
-                                       D2D1_DRAW_TEXT_OPTIONS_NONE);
-        }
+
+    // Vector glyph. One optical size for every icon (0.70 of the hit target,
+    // well inside the 24px circle), and it shrinks with the press scale so the
+    // glyph and the disc stay locked together.
+    if (ID2D1PathGeometry* geo = icon_geometry(icon)) {
+        icons::draw(m_render_target, geo, m_brush, D2D1::Point2F(cx, cy),
+                    rr * 2.0f * 0.70f, color);
     }
 }
 

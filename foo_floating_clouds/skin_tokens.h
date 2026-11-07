@@ -36,10 +36,10 @@ struct SkinTokens {
     uint32_t progress_track; float progress_track_alpha;
 
     // ---- Card material -----------------------------------------------------
-    // glass = layered translucent material (Apple). false = the pre-existing
-    // opaque MD3 card, which must keep looking exactly as it did.
+    // glass = layered frosted material (Mist). false = the pre-existing opaque
+    // MD3 card, which must keep looking exactly as it did.
     bool glass;
-    // superellipse = continuous corner ("squircle", Apple). false = a plain
+    // superellipse = continuous corner ("squircle"). false = a plain
     // circular-arc corner (MD3, and the rounded rects the rest of the UI uses).
     bool superellipse;
 
@@ -48,7 +48,7 @@ struct SkinTokens {
     // desktop behind the window, so a low-alpha fill would let sharp desktop
     // detail read straight through the card. The effective transparency is
     // (alpha x the opacity setting); at the default 220 it lands at ~85%,
-    // which is Apple's "thick" material rather than a clear pane.
+    // which reads as a frosted panel rather than a clear pane.
     uint32_t card_fill_top;    float card_fill_top_alpha;
     uint32_t card_fill_bottom; float card_fill_bottom_alpha;
 
@@ -157,22 +157,26 @@ constexpr SkinTokens md3_skin_light = {
     10.0f,                           // small_size
 };
 
-// Apple dark skin: Liquid Glass, "regular" variant approximated for a window
-// that cannot blur its backdrop.
+// Mist (dark): a frosted floating panel. It deliberately does not attempt a
+// real backdrop-blur glass: a layered window cannot sample what is behind
+// it, so that look is not reachable here and claiming it would be
+// dishonest. What it is:
+// a near-opaque cool-neutral panel with a 1px inner rim, a specular top edge
+// and continuous corners.
 // - Body: near-opaque cool-neutral dark (#26262C -> #141417). The old fill was
 //   0x3A3A40 -> 0x1C1C1E at 72/85%, which over any desktop read as a black
 //   slab with a milky blue-grey top band.
 // - Rim: white 30% at the top edge only, black 35% at the bottom edge; nothing
 //   at mid height, so there is no outline around the card.
-// - systemBlue dark #0A84FF; systemPink #FF375F.
-constexpr SkinTokens apple_skin = {
-    0x1C1C1E,                        // surface (Apple dark elevated, Hwnd fallback)
+// - palette: iOS system blue #0A84FF, system pink #FF375F.
+constexpr SkinTokens mist_skin = {
+    0x1C1C1E,                        // surface (dark elevated, Hwnd fallback)
     0x2C2C2E,                        // surface_high
     0x3A3A3C,                        // surface_highest
     0xF2F3F7,                        // on_surface
     0xA8A8B0,                        // on_surface_variant
-    0x0A84FF,                        // primary (iOS systemBlue dark)
-    0xFF375F,                        // tertiary (iOS systemPink)
+    0x0A84FF,                        // primary (system blue, dark)
+    0xFF375F,                        // tertiary (system pink, dark)
     0xFF453A,                        // error (iOS systemRed dark)
     0xFFFFFF, 0.16f,                 // button_fill (frosted white circle)
     0x0A84FF, 0.28f,                 // button_fill_active (vibrant blue fill)
@@ -197,17 +201,17 @@ constexpr SkinTokens apple_skin = {
     10.0f,                           // small_size
 };
 
-// Apple light skin: the light counterpart of the same material. Bright, cool,
-// near-opaque glass with dark text; the rim highlight is invisible over a white
+// Mist (light): the light counterpart of the same material. Bright, cool,
+// near-opaque panel with dark text; the rim highlight is invisible over a white
 // desktop and catches on dark content, the bottom shade gives the card an edge.
-constexpr SkinTokens apple_skin_light = {
-    0xF2F2F7,                        // surface (Apple light elevated, Hwnd fallback)
+constexpr SkinTokens mist_skin_light = {
+    0xF2F2F7,                        // surface (light elevated, Hwnd fallback)
     0xE9E9EE,                        // surface_high
     0xE0E0E5,                        // surface_highest
     0x131316,                        // on_surface
     0x4E4E58,                        // on_surface_variant
-    0x007AFF,                        // primary (iOS systemBlue light)
-    0xFF2D55,                        // tertiary (iOS systemPink light)
+    0x007AFF,                        // primary (system blue, light)
+    0xFF2D55,                        // tertiary (system pink, light)
     0xFF3B30,                        // error (iOS systemRed light)
     0x000000, 0.07f,                 // button_fill
     0x007AFF, 0.18f,                 // button_fill_active

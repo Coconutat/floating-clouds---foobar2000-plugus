@@ -40,7 +40,7 @@ inline const wchar_t* tr_skin(FloatingSkin s)
 {
     switch (s) {
         case FloatingSkin::MD3: return tr(L"Material 3", L"Material 3");
-        case FloatingSkin::Apple: return tr(L"Apple (Liquid Glass)", L"Apple（液态玻璃）");
+        case FloatingSkin::Mist: return tr(L"Mist", L"薄雾");
         default: return L"";
     }
 }

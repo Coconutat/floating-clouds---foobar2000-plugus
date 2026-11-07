@@ -13,7 +13,7 @@
 inline const SkinTokens& get_skin_tokens(FloatingSkin skin, bool light)
 {
     if (light) {
-        return (skin == FloatingSkin::Apple) ? apple_skin_light : md3_skin_light;
+        return (skin == FloatingSkin::Mist) ? mist_skin_light : md3_skin_light;
     }
-    return (skin == FloatingSkin::Apple) ? apple_skin : md3_skin;
+    return (skin == FloatingSkin::Mist) ? mist_skin : md3_skin;
 }

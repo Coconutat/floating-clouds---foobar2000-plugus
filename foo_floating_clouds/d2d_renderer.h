@@ -5,6 +5,7 @@
 #include "config.h"
 #include "skin_theme.h"
 #include "styles/glass_card.h"
+#include "styles/icons.h"
 
 // ============================================================================
 // D2DRenderer - Direct2D rendering engine for the floating window
@@ -92,10 +93,11 @@ public:
     // Draw album art
     void draw_album_art(float x, float y, float size, album_art_data_ptr art);
     
-    // Draw a control button (circle with icon). state: 0 normal, 1 hover, 2 pressed.
-    // state_alpha is the eased MD3 state-layer opacity (0..pressed_state) that
-    // drives the hover/pressed transition and the press-scale (plan 001).
-    void draw_button(float x, float y, float size, const wchar_t* icon_text,
+    // Draw a control button (circle with a vector icon). state: 0 normal,
+    // 1 hover, 2 pressed. state_alpha is the eased MD3 state-layer opacity
+    // (0..pressed_state) that drives the hover/pressed transition and the
+    // press-scale (plan 001).
+    void draw_button(float x, float y, float size, icons::Kind icon,
                      bool is_active, const D2D1_COLOR_F& color, int state = 0, float state_alpha = 0.0f);
     
     // Draw a rounded progress ring
@@ -185,6 +187,10 @@ protected:
     bool m_album_art_dirty = true;
     int m_album_art_display_size = 0; // display size the cached bitmap was scaled to
     
+    // Cached unit-box glyph geometries (icons.h), built on first use.
+    ID2D1PathGeometry* m_icon_geo[icons::kKindCount] = {};
+    ID2D1PathGeometry* icon_geometry(icons::Kind kind);
+
     // Round-cap stroke style (for progress ring / glass edges)
     ID2D1StrokeStyle* m_round_stroke = nullptr;
 

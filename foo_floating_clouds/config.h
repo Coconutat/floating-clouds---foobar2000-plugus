@@ -61,7 +61,7 @@ enum class FloatingStyle : int32_t {
 // Visual skin (material system), orthogonal to FloatingStyle (layout).
 enum class FloatingSkin : int32_t {
     MD3 = 0,      // current Material 3 dark look (default)
-    Apple = 1,    // Apple Design: dark liquid glass + system blue
+    Mist = 1,     // Mist: near-opaque frosted panel, cool neutral, squircle
     Count = 2
 };
 

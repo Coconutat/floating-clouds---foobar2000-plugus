@@ -89,7 +89,7 @@ void FloatingCloudsWindow::initialize_window(HWND parent)
             ? static_cast<FloatingStyle>(saved) : static_cast<FloatingStyle>(DEFAULT_STYLE);
         if ((int)m_current_style != saved) cfg_style = (int)m_current_style;
     }
-    // Apply the saved skin (0 = MD3 default, 1 = Apple).
+    // Apply the saved skin (0 = MD3 default, 1 = Mist).
     {
         cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
         int saved = (int)cfg_skin.get_value();

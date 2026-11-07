@@ -79,9 +79,23 @@ void StyleRenderer::draw_button_row(const CSize& size)
     const float btn_start_x = ((float)size.cx - (float)button_row_width()) / 2;
     const float btn_y = (float)button_row_y(size.cy);
 
-    // prev, play/pause, next, mute, playlist picker
-    const wchar_t* icons[btn_count] = { L"\u23EE", L"\u23EF", L"\u23ED", L"\U0001F507", L"\u2630" };
-    bool active[btn_count] = { false, m_window->is_paused(), false, m_window->is_volume_muted(), false };
+    // prev, play/pause, next, mute, playlist picker.
+    // The glyph shows the STATE, not a generic "toggle everything" symbol: while
+    // a track plays the button offers Pause, otherwise Play. Mute likewise shows
+    // the state it is in (speaker with / without sound).
+    const bool playing_now = m_window->is_playing() && !m_window->is_paused();
+    const icons::Kind kinds[btn_count] = {
+        icons::Kind::Prev,
+        playing_now ? icons::Kind::Pause : icons::Kind::Play,
+        icons::Kind::Next,
+        m_window->is_volume_muted() ? icons::Kind::VolumeOff : icons::Kind::VolumeOn,
+        icons::Kind::Queue,
+    };
+    // Only the primary action gets an accent fill; tinting several control
+    // backgrounds at once flattens the row (HIG: colour the background of a
+    // primary action rather than many controls). The mute state is carried by
+    // its red glyph instead.
+    bool active[btn_count] = { false, playing_now, false, false, false };
 
     for (int i = 0; i < btn_count; i++) {
         float btn_x = btn_start_x + i * (BUTTON_SIZE + btn_spacing);
@@ -92,15 +106,17 @@ void StyleRenderer::draw_button_row(const CSize& size)
         // Eased MD3 state-layer opacity (plan 001), animated by the frame loop.
         float state_alpha = m_window->get_button_state_layer(i);
 
-        // Icon color: playing play/pause -> primary; muted volume -> error.
+        // Icon color: the play/pause action always carries the accent (it is the
+        // primary action whether it is offering Play or Pause); a muted volume
+        // control turns red.
         D2D1_COLOR_F icon_color = D2DRenderer::hex(m_renderer->skin().on_surface_variant, 0.95f);
-        if (i == 1 && m_window->is_playing() && !m_window->is_paused()) {
+        if (i == 1) {
             icon_color = D2DRenderer::hex(m_renderer->skin().primary, 1.0f);
         } else if (i == 3 && m_window->is_volume_muted()) {
             icon_color = D2DRenderer::hex(m_renderer->skin().error, 1.0f);
         }
 
-        m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, icons[i], active[i],
+        m_renderer->draw_button(btn_x, btn_y, (float)BUTTON_SIZE, kinds[i], active[i],
                                 icon_color, state, state_alpha);
     }
 }
@@ -116,7 +132,9 @@ void StyleRenderer::render_minimal(const CSize& size)
     
     pfc::string8 display;
     if (m_window->is_playing()) {
-        display << (m_window->is_paused() ? "\xE2\x9A\x90 " : "\xE2\x96\xB6 ");
+        // Inline state marker: U+23F8 (pause) / U+25B6 (play). The previous
+        // paused byte sequence was E2 9A 90 = U+2690, a white flag.
+        display << (m_window->is_paused() ? "\xE2\x8F\xB8 " : "\xE2\x96\xB6 ");
     }
     display << m_window->get_title() << "  \xC2\xB7  " << m_window->get_artist();
     
