@@ -6,7 +6,7 @@
 
 DECLARE_COMPONENT_VERSION(
     "Apple Music Tags",
-    "0.1.2",
+    "0.2.5",
     "Fetches Apple Music album tags from the iTunes Lookup API and writes them to the selected tracks, per storefront region (metadata language). By Coconutat."
 );
 
