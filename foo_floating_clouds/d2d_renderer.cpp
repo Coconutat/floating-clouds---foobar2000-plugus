@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "d2d_renderer.h"
 #include "config.h"
+#include "styles/glass_card.h"
 
 // ============================================================================
 // D2DRenderer implementation
@@ -74,7 +75,6 @@ void D2DRenderer::release_resources()
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
     if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
     if (m_small_left_format) { m_small_left_format->Release(); m_small_left_format = nullptr; }
-    if (m_rounded_rect_geo) { m_rounded_rect_geo->Release(); m_rounded_rect_geo = nullptr; }
     if (m_round_stroke) { m_round_stroke->Release(); m_round_stroke = nullptr; }
     if (m_album_art_bitmap) { m_album_art_bitmap->Release(); m_album_art_bitmap = nullptr; }
     m_mode = PresentMode::None;
@@ -191,99 +191,20 @@ bool D2DRenderer::create_shadow()
     if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
     if (m_shadow_contact_bitmap) { m_shadow_contact_bitmap->Release(); m_shadow_contact_bitmap = nullptr; }
 
+    // Shadow layers are built by the same module that paints the card, from the
+    // same tokens: the mask, the blur and the feather all have to agree with the
+    // silhouette or the margin shows up as a rectangle.
     const SkinTokens& t = skin();
-    bool ok = build_shadow_bitmap(t.shadow_alpha, t.shadow_blur, &m_shadow_bitmap);
+    bool ok = glass::build_shadow_bitmap(m_render_target, m_dib_size.cx, m_dib_size.cy,
+                                         t, t.shadow_alpha, t.shadow_blur, &m_shadow_bitmap);
     if (ok && t.shadow_contact_alpha > 0.0f) {
-        ok = build_shadow_bitmap(t.shadow_contact_alpha, t.shadow_contact_blur, &m_shadow_contact_bitmap);
+        ok = glass::build_shadow_bitmap(m_render_target, m_dib_size.cx, m_dib_size.cy,
+                                        t, t.shadow_contact_alpha, t.shadow_contact_blur,
+                                        &m_shadow_contact_bitmap);
     }
     return ok;
 }
 
-bool D2DRenderer::build_shadow_bitmap(float alpha, int blur, ID2D1Bitmap** out_bitmap)
-{
-    if (!out_bitmap || alpha <= 0.0f) return true;
-
-    const int w = m_dib_size.cx;
-    const int h = m_dib_size.cy;
-    const SkinTokens& t = skin();
-    const int inset = (int)t.shadow_inset;
-    const float r = effective_corner(t.corner_card,
-        D2D1::RectF((float)inset, (float)inset, (float)(w - inset), (float)(h - inset)));
-    const int x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
-
-    // Rasterize the rounded-card alpha into a CPU buffer.
-    std::vector<uint8_t> a((size_t)w * h, 0);
-    for (int y = y0; y < y1; y++) {
-        for (int x = x0; x < x1; x++) {
-            int dx = (std::max)(x0 - x, (std::max)(x - x1, 0));
-            int dy = (std::max)(y0 - y, (std::max)(y - y1, 0));
-            float d = (float)std::sqrt((double)(dx * dx + dy * dy));
-            if (d <= r) a[(size_t)y * w + x] = 255;
-        }
-    }
-
-    // Separable box blur (3 passes) for a soft shadow.
-    std::vector<uint8_t> tmp((size_t)w * h), tmp2((size_t)w * h);
-    auto blur_h = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
-        if (rad <= 0) { dst = src; return; }
-        for (int y = 0; y < h; y++) {
-            long acc = 0;
-            const size_t row = (size_t)y * w;
-            for (int x = -rad; x <= rad; x++) {
-                int xi = (std::max)(0, (std::min)(w - 1, x));
-                acc += src[row + xi];
-            }
-            for (int x = 0; x < w; x++) {
-                dst[row + x] = (uint8_t)(acc / (2 * rad + 1));
-                int xi1 = (std::max)(0, (std::min)(w - 1, x - rad));
-                int xi2 = (std::max)(0, (std::min)(w - 1, x + rad + 1));
-                acc += src[row + xi2] - src[row + xi1];
-            }
-        }
-    };
-    auto blur_v = [&](const std::vector<uint8_t>& src, std::vector<uint8_t>& dst, int rad) {
-        if (rad <= 0) { dst = src; return; }
-        for (int x = 0; x < w; x++) {
-            long acc = 0;
-            for (int y = -rad; y <= rad; y++) {
-                int yi = (std::max)(0, (std::min)(h - 1, y));
-                acc += src[(size_t)yi * w + x];
-            }
-            for (int y = 0; y < h; y++) {
-                dst[(size_t)y * w + x] = (uint8_t)(acc / (2 * rad + 1));
-                int yi1 = (std::max)(0, (std::min)(h - 1, y - rad));
-                int yi2 = (std::max)(0, (std::min)(h - 1, y + rad + 1));
-                acc += src[(size_t)yi2 * w + x] - src[(size_t)yi1 * w + x];
-            }
-        }
-    };
-    for (int pass = 0; pass < 3; pass++) {
-        blur_h(a, tmp, blur);
-        blur_v(tmp, tmp2, blur);
-        a.swap(tmp2);
-    }
-
-    // Upload as a premultiplied black bitmap (RGB=0, A = blurred alpha * strength).
-    // Feather the alpha to zero at the window edges so the shadow never gets
-    // clipped by the square window boundary (visible as a rectangular ghost
-    // on light backgrounds).
-    std::vector<uint32_t> px((size_t)w * h);
-    const float feather = (float)inset;
-    for (int y = 0; y < h; y++) {
-        const float dy = (float)(std::min)(y, h - 1 - y);
-        for (int x = 0; x < w; x++) {
-            const float dx = (float)(std::min)(x, w - 1 - x);
-            const float edge = (std::min)(1.0f, (std::min)(dx, dy) / feather);
-            const size_t i = (size_t)y * w + x;
-            px[i] = (uint32_t)(a[i] * alpha * edge) << 24; // B8G8R8A8: alpha in the high byte
-        }
-    }
-    HRESULT hr = m_ulw_target->CreateBitmap(D2D1::SizeU((UINT)w, (UINT)h), px.data(),
-        (UINT)w * 4,
-        D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
-        out_bitmap);
-    return SUCCEEDED(hr);
-}
 
 bool D2DRenderer::begin_draw()
 {
@@ -398,14 +319,35 @@ void D2DRenderer::rebuild_skin_resources()
 
 void D2DRenderer::release_glass_brushes()
 {
-    if (m_glass_fill_brush) { m_glass_fill_brush->Release(); m_glass_fill_brush = nullptr; }
-    if (m_glass_fill_stops) { m_glass_fill_stops->Release(); m_glass_fill_stops = nullptr; }
-    if (m_specular_brush) { m_specular_brush->Release(); m_specular_brush = nullptr; }
-    if (m_specular_stops) { m_specular_stops->Release(); m_specular_stops = nullptr; }
-    if (m_glass_stroke_brush) { m_glass_stroke_brush->Release(); m_glass_stroke_brush = nullptr; }
-    if (m_glass_stroke_stops) { m_glass_stroke_stops->Release(); m_glass_stroke_stops = nullptr; }
     if (m_progress_gradient_brush) { m_progress_gradient_brush->Release(); m_progress_gradient_brush = nullptr; }
     if (m_progress_gradient_stops) { m_progress_gradient_stops->Release(); m_progress_gradient_stops = nullptr; }
+    m_card_geo.release();
+    m_card_geo_w = m_card_geo_h = -1;
+    m_card_geo_radius = -1.0f;
+    m_card_geo_skin = m_card_geo_light = m_card_geo_glass = m_card_geo_squircle = -1;
+}
+
+void D2DRenderer::ensure_card_geometry(const D2D1_RECT_F& rect, float radius)
+{
+    const SkinTokens& t = skin();
+    const int glass_flag = t.glass ? 1 : 0;
+    const int squircle = t.superellipse ? 1 : 0;
+    const int light = m_light ? 1 : 0;
+    if (m_card_geo.outer &&
+        m_card_geo_w == m_dib_size.cx && m_card_geo_h == m_dib_size.cy &&
+        m_card_geo_radius == radius && m_card_geo_skin == (int)m_skin &&
+        m_card_geo_light == light && m_card_geo_glass == glass_flag &&
+        m_card_geo_squircle == squircle) {
+        return;
+    }
+    glass::build_card_geometry(m_d2d_factory, rect, radius, t.superellipse, 1.0f, m_card_geo);
+    m_card_geo_w = m_dib_size.cx;
+    m_card_geo_h = m_dib_size.cy;
+    m_card_geo_radius = radius;
+    m_card_geo_skin = (int)m_skin;
+    m_card_geo_light = light;
+    m_card_geo_glass = glass_flag;
+    m_card_geo_squircle = squircle;
 }
 
 void D2DRenderer::ensure_gradient_brush(
@@ -422,12 +364,6 @@ void D2DRenderer::ensure_gradient_brush(
             D2D1::LinearGradientBrushProperties(p0, p1), sc, brush);
         *stops = sc.Detach();
     }
-}
-
-float D2DRenderer::effective_corner(float radius, const D2D1_RECT_F& rect) const
-{
-    const float half = (std::min)(rect.right - rect.left, rect.bottom - rect.top) * 0.5f;
-    return (std::min)(radius, half);
 }
 
 bool D2DRenderer::debug_enabled()
@@ -459,78 +395,17 @@ void D2DRenderer::log_present_summary()
 
 void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
 {
-    if (m_mode == PresentMode::ULW) {
-        const SkinTokens& t = skin();
-        const float r = effective_corner(radius, rect);
-
-        // Elevation: contact shadow first (tight, darker), then the wide
-        // soft ambient shadow. Both are CPU box-blurred bitmaps.
-        if (m_shadow_contact_bitmap) {
-            m_render_target->DrawBitmap(m_shadow_contact_bitmap,
-                D2D1::RectF(0, 0, (float)m_dib_size.cx, (float)m_dib_size.cy),
-                1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-        }
-        if (m_shadow_bitmap) {
-            m_render_target->DrawBitmap(m_shadow_bitmap,
-                D2D1::RectF(0, 0, (float)m_dib_size.cx, (float)m_dib_size.cy),
-                1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-        }
-
-        // Glass path (Apple): vertical gradient fill (lit top -> deeper
-        // bottom) + specular bloom + gradient hairline rim. A flat tint
-        // reads as "black transparent glass"; gradients read as a material.
-        if (t.glass_stroke_top_alpha > 0.0f || t.glass_specular_alpha > 0.0f) {
-            // 1) Glass fill gradient, top -> bottom.
-            D2D1_GRADIENT_STOP fill_stops[2] = {
-                { 0.0f, D2DRenderer::hex(t.glass_fill_top, t.glass_fill_top_alpha) },
-                { 1.0f, D2DRenderer::hex(t.glass_fill_bottom, t.glass_fill_bottom_alpha) },
-            };
-            ensure_gradient_brush(&m_glass_fill_brush, &m_glass_fill_stops,
-                D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
-                fill_stops, 2);
-            if (m_glass_fill_brush) {
-                m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_glass_fill_brush);
-            }
-
-            // 2) Specular bloom: bright just below the top edge, fading out
-            //    by glass_specular_stop of the card height.
-            if (t.glass_specular_alpha > 0.0f) {
-                D2D1_GRADIENT_STOP spec_stops[2] = {
-                    { 0.0f, D2DRenderer::hex(t.glass_specular, t.glass_specular_alpha) },
-                    { t.glass_specular_stop, D2DRenderer::hex(t.glass_specular, 0.0f) },
-                };
-                ensure_gradient_brush(&m_specular_brush, &m_specular_stops,
-                    D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
-                    spec_stops, 2);
-                if (m_specular_brush) {
-                    m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_specular_brush);
-                }
-            }
-
-            // 3) Rim: a soft outer halo (edge bloom) plus a gradient
-            //    hairline — bright at the light-catching top edge, nearly
-            //    gone at the bottom (fake edge refraction).
-            m_brush->SetColor(D2DRenderer::hex(0xFFFFFF, 0.06f));
-            m_render_target->DrawRoundedRectangle(D2D1::RoundedRect(rect, r, r),
-                m_brush, t.glass_stroke_width + 1.5f, m_round_stroke);
-            D2D1_GRADIENT_STOP stroke_stops[2] = {
-                { 0.0f, D2DRenderer::hex(t.glass_stroke_top, t.glass_stroke_top_alpha) },
-                { 1.0f, D2DRenderer::hex(t.glass_stroke_bottom, t.glass_stroke_bottom_alpha) },
-            };
-            ensure_gradient_brush(&m_glass_stroke_brush, &m_glass_stroke_stops,
-                D2D1::Point2F(rect.left, rect.top), D2D1::Point2F(rect.left, rect.bottom),
-                stroke_stops, 2);
-            if (m_glass_stroke_brush) {
-                m_render_target->DrawRoundedRectangle(D2D1::RoundedRect(rect, r, r),
-                    m_glass_stroke_brush, t.glass_stroke_width, m_round_stroke);
-            }
-        } else {
-            // Opaque card (MD3).
-            m_brush->SetColor(D2DRenderer::hex(t.surface, 1.0f));
-            m_render_target->FillRoundedRectangle(D2D1::RoundedRect(rect, r, r), m_brush);
-        }
+    if (m_mode != PresentMode::ULW) {
+        // Hwnd fallback: clear_background already filled the opaque surface.
+        return;
     }
-    // Hwnd fallback: clear_background already filled the opaque surface.
+
+    // One module owns the card's shape, elevation and material (glass_card.h),
+    // so the shadow mask and the silhouette can never drift apart.
+    ensure_card_geometry(rect, radius);
+    glass::paint_card(m_render_target, rect, skin(), m_card_geo,
+                      m_shadow_bitmap, m_shadow_contact_bitmap,
+                      D2D1::SizeF((float)m_dib_size.cx, (float)m_dib_size.cy));
 }
 
 void D2DRenderer::on_resize(CSize size)

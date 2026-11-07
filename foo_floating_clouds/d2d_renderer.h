@@ -4,6 +4,7 @@
 #include <string>
 #include "config.h"
 #include "skin_theme.h"
+#include "styles/glass_card.h"
 
 // ============================================================================
 // D2DRenderer - Direct2D rendering engine for the floating window
@@ -152,13 +153,16 @@ protected:
     ID2D1Bitmap* m_shadow_bitmap = nullptr;
     ID2D1Bitmap* m_shadow_contact_bitmap = nullptr;
 
-    // Apple liquid-glass gradient brushes (ULW, rebuilt on set_skin)
-    ID2D1LinearGradientBrush* m_glass_fill_brush = nullptr;
-    ID2D1GradientStopCollection* m_glass_fill_stops = nullptr;
-    ID2D1LinearGradientBrush* m_specular_brush = nullptr;
-    ID2D1GradientStopCollection* m_specular_stops = nullptr;
-    ID2D1LinearGradientBrush* m_glass_stroke_brush = nullptr;
-    ID2D1GradientStopCollection* m_glass_stroke_stops = nullptr;
+    // Surface card geometry (silhouette + 1px rim ring), cached until the card
+    // size, corner radius, skin or appearance changes.
+    glass::CardGeometry m_card_geo;
+    int m_card_geo_w = -1;
+    int m_card_geo_h = -1;
+    float m_card_geo_radius = -1.0f;
+    int m_card_geo_skin = -1;
+    int m_card_geo_light = -1;
+    int m_card_geo_glass = -1;
+    int m_card_geo_squircle = -1;
 
     // Progress-bar gradient (VisualizerArt wave-base line)
     ID2D1LinearGradientBrush* m_progress_gradient_brush = nullptr;
@@ -181,9 +185,6 @@ protected:
     bool m_album_art_dirty = true;
     int m_album_art_display_size = 0; // display size the cached bitmap was scaled to
     
-    // Rounded rect geometry
-    ID2D1RoundedRectangleGeometry* m_rounded_rect_geo = nullptr;
-
     // Round-cap stroke style (for progress ring / glass edges)
     ID2D1StrokeStyle* m_round_stroke = nullptr;
 
@@ -208,14 +209,13 @@ protected:
     bool create_hwnd_resources();
     bool create_brush_and_stroke();
     bool create_shadow();
-    bool build_shadow_bitmap(float alpha, int blur, ID2D1Bitmap** out_bitmap);
+    // Rebuild the cached card geometry if the card's shape inputs changed.
+    void ensure_card_geometry(const D2D1_RECT_F& rect, float radius);
     void release_glass_brushes();
     void ensure_gradient_brush(ID2D1LinearGradientBrush** brush,
                                ID2D1GradientStopCollection** stops,
                                const D2D1_POINT_2F& p0, const D2D1_POINT_2F& p1,
                                const D2D1_GRADIENT_STOP* gradient_stops, UINT32 count);
-    float effective_corner(float radius, const D2D1_RECT_F& rect) const;
-
     // Present-loop diagnostics (debug logging): 1s summary of frame/failure counts.
     bool debug_enabled();
     void log_present_summary();
