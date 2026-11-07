@@ -388,11 +388,28 @@ void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abor
             return;
         }
         out = album_only; // metadata only: no storefront had the track list
+    } else if (have_album_only) {
+        // The preferred storefront listed the album but returned no track rows
+        // (CN does exactly that for albums it only partly carries). Its
+        // album-level text is an official localisation, so use it directly and
+        // borrow the track rows from the storefront that has them - then only
+        // the borrowed text needs the Traditional->Simplified fallback below.
+        // Same track count keeps this from mixing up different editions.
+        if (album_only.track_count == 0 || album_only.track_count == out.track_count) {
+            out.album_name = album_only.album_name;
+            out.album_artist = album_only.album_artist;
+            out.genre = album_only.genre;
+            if (!album_only.copyright.is_empty()) out.copyright = album_only.copyright;
+            if (!album_only.release_date.is_empty()) out.release_date = album_only.release_date;
+            FB2K_console_formatter() << "Apple Music Tags: album text from " << album_only.region
+                << ", track rows from " << out.region;
+        }
     }
 
-    // A Simplified Chinese selection wants Simplified output: data from a
-    // Traditional storefront is converted char-by-char (there is no official CN
-    // metadata for albums CN does not carry).
+    // Fallback only: whatever could not be fetched in Simplified directly - HK/TW
+    // track rows, or every field when no Chinese storefront carries the album -
+    // is converted char-by-char. Idempotent, so the album-level text already
+    // merged from an official Simplified storefront is left untouched.
     if (pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0 && has_traditional(out)) {
         to_simplified(out);
         out.t2s_applied = true;
