@@ -38,6 +38,10 @@ struct AppleAlbum {
     pfc::string8 region;         // storefront code actually used (e.g. "hk" after CN fallback)
     bool not_available = false;    // storefront responded but has no such album
     bool t2s_applied = false;      // Traditional->Simplified was applied (char-by-char)
+    // True when text fields were taken from several storefronts (official
+    // Simplified from one, track rows from another); `region` stays the storefront
+    // that supplied the track rows.
+    bool multi_source = false;
     pfc::list_t<AppleTrack> tracks;
 };
 
@@ -47,8 +51,11 @@ struct AppleAlbum {
 bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int64_t& out_album_id);
 
 // Fetch album + track metadata from the iTunes Lookup API.
+// `lang` (optional) is passed as the API's `l` parameter; "zh_CN" makes Apple
+// localise the fields it actually localises (e.g. genre) to Simplified Chinese.
 // WORKER THREAD ONLY (uses abort_callback; may throw on network/HTTP failure).
-void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out);
+void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out,
+                 const char* lang = nullptr);
 
 // Convert one UTF-8 string from Traditional Chinese to Simplified Chinese
 // (char-by-char via the Windows NLS mapping). Idempotent: already-Simplified

@@ -241,11 +241,12 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
         if (kRegions[m_region_index].scan_all) {
             popup_message::g_show(
                 pfc::string_formatter()
-                    << tr8("Auto mode: Chinese tags were found on ", "自动模式：已从 ")
+                    << tr8("Auto mode: the official Simplified text was merged from several regions; only fields no region "
+                           "provides in Simplified (track titles here) were converted character-by-character from ",
+                           "自动模式：已合并多地区的官方简体文本；仅有些地区也不提供简体的字段（如此处的曲目名）由 ")
                     << source
-                    << tr8(" and converted character-by-character to Simplified Chinese. "
-                           "Some titles or names may differ from mainland conventions.",
-                           " 取到中文标签，并逐字转为简体中文（非官方简中）。个别标题或译名可能与大陆习惯不同。"),
+                    << tr8(" Traditional Chinese. Some titles or names may differ from mainland conventions.",
+                           " 的繁体逐字转换而来。个别标题或译名可能与大陆习惯不同。"),
                 tr8("Apple Music Tags", "Apple Music 标签更新"));
         } else {
             popup_message::g_show(
@@ -287,8 +288,10 @@ void TagsDialog::UpdatePreview()
         preview += tr(L")", L"）");
     }
     if (m_album.t2s_applied) {
-        preview += tr(L" (converted from Traditional Chinese, char-by-char, not official Simplified)",
-                      L"（繁体逐字转简，非官方简中）");
+        preview += tr(L" (partly converted Traditional->Simplified, not official Simplified)",
+                      L"（部分繁体逐字转简，非官方简中）");
+    } else if (m_album.multi_source) {
+        preview += tr(L" (official Simplified text merged from several regions)", L"（官方简体，多地区合并）");
     } else if (has_traditional(m_album)) {
         preview += tr(L" (Traditional Chinese detected - check \"Convert to Simplified Chinese\" to convert)",
                       L"（检测到繁体中文，可勾选“转为简体中文”进行转换）");

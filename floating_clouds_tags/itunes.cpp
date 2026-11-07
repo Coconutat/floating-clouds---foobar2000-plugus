@@ -177,13 +177,17 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int64_t& out_
     return true;
 }
 
-void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out)
+void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out,
+                 const char* lang)
 {
     out = AppleAlbum();
 
     pfc::string_formatter url;
     url << "https://itunes.apple.com/lookup?id=" << (long long)album_id
         << "&entity=song&country=" << region << "&limit=200";
+    // The API only localises a few fields (genre and the like) and rejects
+    // zh-Hans locales, but "zh_CN" is accepted and yields Simplified genre names.
+    if (lang && *lang) url << "&l=" << lang;
 
     service_ptr_t<http_request> req = http_client::get()->create_request("GET");
     // Apple gzips when asked; the host's decompression support is not something a
@@ -332,13 +336,19 @@ bool has_traditional(const AppleAlbum& a)
 
 namespace {
 
-// Number of CJK ideographs in a UTF-8 string. This is the measure of "this
-// storefront actually returned Chinese metadata": romanised answers (Jane Zhang /
-// Caisheng Bo) score 0 even though the album title may be Chinese.
-unsigned count_cjk(const char* utf8)
+// Character classes that matter when deciding whether a storefront's answer is
+// "Chinese metadata": CJK ideographs count, Japanese kana disqualify (kanji are
+// in the same Unicode range, so a Japanese title would otherwise score as
+// Chinese and win the merge).
+struct ScriptStats {
+    unsigned cjk = 0;
+    bool kana = false;
+};
+
+ScriptStats script_stats(const char* utf8)
 {
-    if (!utf8) return 0;
-    unsigned n = 0;
+    ScriptStats st;
+    if (!utf8) return st;
     const unsigned char* p = (const unsigned char*)utf8;
     while (*p) {
         unsigned cp = 0;
@@ -355,10 +365,13 @@ unsigned count_cjk(const char* utf8)
             cp = (cp << 6) | (*p & 0x3F);
         }
         if (!valid) continue;
-        if (cp >= 0x4E00 && cp <= 0x9FFF) n++;
+        if (cp >= 0x4E00 && cp <= 0x9FFF) st.cjk++;
+        else if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)) st.kana = true;
     }
-    return n;
+    return st;
 }
+
+unsigned count_cjk(const char* utf8) { return script_stats(utf8).cjk; }
 
 unsigned album_cjk(const AppleAlbum& a)
 {
@@ -371,6 +384,52 @@ unsigned album_cjk(const AppleAlbum& a)
     return n;
 }
 
+// 2 = Chinese and already Simplified (official localisation, keep as-is),
+// 1 = Chinese but Traditional (usable, would need conversion),
+// 0 = not Chinese at all (romanised / English / Japanese).
+int text_score(const pfc::string8& s)
+{
+    if (s.is_empty()) return -1;
+    const ScriptStats st = script_stats(s.get_ptr());
+    if (st.kana || st.cjk == 0) return 0;
+    const bool needs_conversion = strcmp(to_simplified_str(s.get_ptr()).get_ptr(), s.get_ptr()) != 0;
+    return needs_conversion ? 1 : 2;
+}
+
+// Take `candidate` only when it is a *better* script match than what we have, so
+// an already-Simplified value always beats one that would need conversion.
+void prefer_text(pfc::string8& target, const pfc::string8& candidate, bool& merged)
+{
+    if (candidate.is_empty()) return;
+    if (text_score(candidate) > text_score(target)) {
+        target = candidate;
+        merged = true;
+    }
+}
+
+const AppleTrack* find_track(const AppleAlbum& album, int disc, int track)
+{
+    for (t_size i = 0; i < album.tracks.get_size(); i++) {
+        if (album.tracks[i].disc_number == disc && album.tracks[i].track_number == track)
+            return &album.tracks[i];
+    }
+    return nullptr;
+}
+
+// Single-artist albums: when a track's Traditional artist converts to exactly the
+// official Simplified album artist we already have, use the official spelling
+// instead of deriving it by conversion.
+void normalize_track_artists(AppleAlbum& album)
+{
+    if (album.album_artist.is_empty()) return;
+    for (t_size t = 0; t < album.tracks.get_size(); t++) {
+        AppleTrack& track = album.tracks[t];
+        if (track.artist == album.album_artist) continue;
+        if (strcmp(to_simplified_str(track.artist.get_ptr()).get_ptr(), album.album_artist.get_ptr()) == 0)
+            track.artist = album.album_artist;
+    }
+}
+
 bool is_zh_hans(const RegionInfo& r) { return strcmp(r.lang, "zh-Hans") == 0; }
 
 // Auto mode ("CN auto: scan regions for Chinese"): ask every storefront at once
@@ -381,7 +440,7 @@ bool is_zh_hans(const RegionInfo& r) { return strcmp(r.lang, "zh-Hans") == 0; }
 // then a Simplified storefront beats a Traditional one, and only then does
 // whichever finished first win. Pure arrival order would happily pick SG/US,
 // which carry a Chinese album title but a romanised artist name.
-void scan_storefronts(int64_t album_id, abort_callback& abort, AppleAlbum& out)
+void scan_storefronts(int64_t album_id, const char* lang, abort_callback& abort, AppleAlbum& out)
 {
     std::vector<AppleAlbum> albums(kRegionCount);
     std::vector<unsigned> cjk(kRegionCount, 0);
@@ -394,7 +453,7 @@ void scan_storefronts(int64_t album_id, abort_callback& abort, AppleAlbum& out)
         if (!kRegions[i].code[0] || kRegions[i].scan_all) continue; // skip the auto row
         jobs.push_back(std::async(std::launch::async, [&, i]() {
             try {
-                fetch_album(album_id, kRegions[i].code, abort, albums[(size_t)i]);
+                fetch_album(album_id, kRegions[i].code, abort, albums[(size_t)i], lang);
             } catch (...) {
                 // One slow or failing storefront must not fail the whole scan.
             }
@@ -441,23 +500,41 @@ void scan_storefronts(int64_t album_id, abort_callback& abort, AppleAlbum& out)
 
     out = albums[(size_t)best];
 
-    // Prefer the official Simplified album-level text when the winner has track
-    // rows from a Traditional storefront: CN often lists an album as a collection
-    // without tracks, and that text is Apple's own Simplified localisation.
+    // Per-field merge, not per-storefront: Apple scatters the official Simplified
+    // text across catalogs. On the reported single, SG returns a Simplified album
+    // title and track title but a romanised artist, CN returns the official
+    // Simplified artist and genre but no track rows, and HK/TW have the track rows
+    // in Traditional. Taking the best script per field therefore yields fully
+    // official Simplified metadata and needs no conversion at all.
+    bool merged = false;
     for (int i = 0; i < kRegionCount; i++) {
-        if (i == best || !albums[(size_t)i].ok || !is_zh_hans(kRegions[i])) continue;
-        if (cjk[(size_t)i] == 0 || albums[(size_t)i].tracks.get_size() > 0) continue;
-        if (albums[(size_t)i].track_count != 0 && albums[(size_t)i].track_count != out.track_count) continue;
-        out.album_name = albums[(size_t)i].album_name;
-        out.album_artist = albums[(size_t)i].album_artist;
-        out.genre = albums[(size_t)i].genre;
-        if (!albums[(size_t)i].copyright.is_empty()) out.copyright = albums[(size_t)i].copyright;
-        if (!albums[(size_t)i].release_date.is_empty()) out.release_date = albums[(size_t)i].release_date;
-        break;
+        if (i == best || kRegions[i].scan_all || !albums[(size_t)i].ok) continue;
+        const AppleAlbum& other = albums[(size_t)i];
+        prefer_text(out.album_name, other.album_name, merged);
+        prefer_text(out.album_artist, other.album_artist, merged);
+        prefer_text(out.genre, other.genre, merged);
+        prefer_text(out.copyright, other.copyright, merged);
+        for (t_size t = 0; t < out.tracks.get_size(); t++) {
+            AppleTrack& dst = out.tracks[t];
+            const AppleTrack* src = find_track(other, dst.disc_number, dst.track_number);
+            if (!src) continue;
+            prefer_text(dst.title, src->title, merged);
+            prefer_text(dst.artist, src->artist, merged);
+            prefer_text(dst.album, src->album, merged);
+            prefer_text(dst.album_artist, src->album_artist, merged);
+            prefer_text(dst.composer, src->composer, merged);
+        }
     }
 
+    // Single-artist albums: official Simplified album artist beats a converted
+    // track artist.
+    normalize_track_artists(out);
+
+    out.multi_source = merged;
+
     FB2K_console_formatter() << "Apple Music Tags: auto scan picked " << out.region
-        << " (chinese chars=" << cjk[(size_t)best] << ", tracks=" << (int)out.tracks.get_size() << ")";
+        << " (chinese chars=" << cjk[(size_t)best] << ", tracks=" << (int)out.tracks.get_size()
+        << ", merged=" << (merged ? 1 : 0) << ")";
 }
 
 } // namespace
@@ -472,11 +549,15 @@ void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abor
     const int selected_index = region_index_for_code(region);
     const RegionInfo& selected = kRegions[selected_index];
 
+    // Apple localises only a few fields via `l`, but for a Simplified target the
+    // accepted "zh_CN" value at least turns genre names into Simplified.
+    const char* api_lang = (pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0) ? "zh_CN" : nullptr;
+
     // Auto mode: no single storefront is trusted, scan them all and keep the
     // answer that actually carries Chinese text.
     if (selected.scan_all) {
-        scan_storefronts(album_id, abort, out);
-        if (out.ok && pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0 && has_traditional(out)) {
+        scan_storefronts(album_id, api_lang, abort, out);
+        if (out.ok && api_lang && has_traditional(out)) {
             to_simplified(out);
             out.t2s_applied = true;
         }
@@ -506,7 +587,7 @@ void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abor
         abort.check();
         AppleAlbum candidate;
         try {
-            fetch_album(album_id, kRegions[order[k]].code, abort, candidate);
+            fetch_album(album_id, kRegions[order[k]].code, abort, candidate, api_lang);
         } catch (const exception_aborted&) {
             throw;
         } catch (const pfc::exception& e) {
@@ -535,27 +616,28 @@ void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abor
         out = album_only; // metadata only: no storefront had the track list
     } else if (have_album_only) {
         // The preferred storefront listed the album but returned no track rows
-        // (CN does exactly that for albums it only partly carries). Its
-        // album-level text is an official localisation, so use it directly and
-        // borrow the track rows from the storefront that has them - then only
-        // the borrowed text needs the Traditional->Simplified fallback below.
-        // Same track count keeps this from mixing up different editions.
+        // (CN does exactly that for albums it only partly carries). Merge its text
+        // field by field so an official Simplified value wins over the borrowed
+        // Traditional one - the same rule the auto scan uses. Same track count
+        // keeps this from mixing up different editions.
         if (album_only.track_count == 0 || album_only.track_count == out.track_count) {
-            out.album_name = album_only.album_name;
-            out.album_artist = album_only.album_artist;
-            out.genre = album_only.genre;
-            if (!album_only.copyright.is_empty()) out.copyright = album_only.copyright;
-            if (!album_only.release_date.is_empty()) out.release_date = album_only.release_date;
-            FB2K_console_formatter() << "Apple Music Tags: album text from " << album_only.region
-                << ", track rows from " << out.region;
+            bool merged = false;
+            prefer_text(out.album_name, album_only.album_name, merged);
+            prefer_text(out.album_artist, album_only.album_artist, merged);
+            prefer_text(out.genre, album_only.genre, merged);
+            prefer_text(out.copyright, album_only.copyright, merged);
+            normalize_track_artists(out);
+            FB2K_console_formatter() << "Apple Music Tags: album text considered from "
+                << album_only.region << ", track rows from " << out.region;
+            out.multi_source = out.multi_source || merged;
         }
     }
 
-    // Fallback only: whatever could not be fetched in Simplified directly - HK/TW
-    // track rows, or every field when no Chinese storefront carries the album -
-    // is converted char-by-char. Idempotent, so the album-level text already
-    // merged from an official Simplified storefront is left untouched.
-    if (pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0 && has_traditional(out)) {
+    // Fallback only: whatever could not be fetched in Simplified directly (HK/TW
+    // track rows, or every field when no Chinese storefront carries the album) is
+    // converted char-by-char. Idempotent, so fields already official Simplified
+    // are left untouched.
+    if (api_lang && has_traditional(out)) {
         to_simplified(out);
         out.t2s_applied = true;
     }
