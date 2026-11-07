@@ -156,7 +156,7 @@ void FloatingCloudsWindow::apply_preferences()
     s_instance->update_layered_window();
 
     // Style: switch if changed, otherwise just repaint. The config already
-    // holds the new 6-style enum (migrated once at load), so no re-migration.
+    // holds the current 7-style enum (migrated once at load), so no re-migration.
     cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
     int v = (int)cfg_style.get_value();
     FloatingStyle st = (v >= 0 && v < (int)FloatingStyle::Count)
@@ -191,6 +191,10 @@ void FloatingCloudsWindow::apply_preferences()
 
 bool FloatingCloudsWindow::render_now()
 {
+    // A hidden window has no frame loop and must stay invisible: never render
+    // into (or present) the stale layered surface while hidden.
+    if (m_vis == Visibility::Hidden) return false;
+
     // Follow foobar2000 light/dark changes between paints (m_dark_hooks
     // updates itself via ui_config callback; we just compare + apply).
     const bool light = effective_light();
@@ -384,6 +388,8 @@ LRESULT FloatingCloudsWindow::OnMouseLeave(UINT, WPARAM, LPARAM, BOOL& bHandled)
 void FloatingCloudsWindow::on_hover_tick()
 {
     if (!IsWindow()) return;
+    // Hidden windows are not hover-polled (a stale timer message can land here).
+    if (m_vis == Visibility::Hidden) { clear_hover_state(); return; }
 
     CPoint sp;
     ::GetCursorPos(&sp);
@@ -483,36 +489,66 @@ void FloatingCloudsWindow::toggle_drag_mode()
 
 void FloatingCloudsWindow::toggle_visibility()
 {
-    m_visible = !m_visible;
-    if (m_visible) {
-        show_with_animation();
+    // Invert the user's intent: a shown window (or one still fading out) hides;
+    // a hidden one shows. Both paths go through the state machine.
+    if (m_vis == Visibility::Shown) {
+        hide_with_animation(true);
     } else {
-        hide_with_animation();
+        show_with_animation();
     }
 }
 
 void FloatingCloudsWindow::show_with_animation()
 {
-    const bool was_hidden = !m_visible;
-    m_visible = true;
-    if (was_hidden) m_anim_opacity = 0.0f; // fade in from transparent
-    FB2K_console_formatter() << "Floating Clouds: show (was_hidden=" << (was_hidden ? 1 : 0) << ")";
+    // An explicit show revives a user-hidden window and clears the reason, so
+    // the next auto-hide / track change behaves normally again.
+    m_user_hidden = false;
+    if (m_vis == Visibility::Shown) return;
+
+    // A real hidden window fades in from transparent; reversing a fade-out
+    // continues from the current opacity instead of restarting at 0.
+    const bool from_hidden = (m_vis == Visibility::Hidden);
+    m_vis = Visibility::Shown;
+    if (from_hidden) m_anim_opacity = 0.0f;
+    FB2K_console_formatter() << "Floating Clouds: show (from_hidden=" << (from_hidden ? 1 : 0) << ")";
+
+    // Publish the starting alpha BEFORE the window appears, so it cannot flash
+    // at full opacity for one frame.
+    update_layered_window();
     ShowWindow(SW_SHOW);
     SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
-    update_layered_window();
     start_anim_timer();
     Invalidate();
 }
 
-void FloatingCloudsWindow::hide_with_animation()
+void FloatingCloudsWindow::hide_with_animation(bool user_initiated)
 {
-    m_visible = false;
-    FB2K_console_formatter() << "Floating Clouds: hide (opacity=" << (int)(m_anim_opacity * 255.0f) << ")";
+    // Record a user hide: a later track change must not revive the window.
+    // Auto-hide leaves the reason untouched, so it never overrides a user hide.
+    if (user_initiated) m_user_hidden = true;
+
+    if (m_vis != Visibility::Shown) return; // already fading out or hidden
+    m_vis = Visibility::Hiding;
+    clear_hover_state(); // a fading window must not keep polling/updating hover
+
+    FB2K_console_formatter() << "Floating Clouds: hide (user=" << (user_initiated ? 1 : 0)
+        << ", opacity=" << (int)(m_anim_opacity * 255.0f) << ")";
     if (m_anim_opacity <= 0.001f) {
-        ShowWindow(SW_HIDE);
+        finish_hide(); // nothing visible yet, no fade-out to animate
         return;
     }
-    start_anim_timer(); // fade out, then SW_HIDE when settled
+    start_anim_timer(); // fade out, then finish_hide() when the alpha settles
+}
+
+void FloatingCloudsWindow::finish_hide()
+{
+    m_vis = Visibility::Hidden;
+    m_anim_opacity = 0.0f;
+    m_anim_lift = (float)SHADOW_INSET; // the next show drifts up from below
+    clear_hover_state();
+    ShowWindow(SW_HIDE);
+    FB2K_console_formatter() << "Floating Clouds: SW_HIDE after fade-out";
+    stop_anim_timer();
 }
 
 void FloatingCloudsWindow::start_anim_timer()
@@ -545,6 +581,8 @@ LRESULT FloatingCloudsWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& bHandle
 void FloatingCloudsWindow::on_anim_tick()
 {
     if (!IsWindow()) { stop_anim_timer(); return; }
+    // Hidden windows have no frame loop; a stale WM_TIMER must not revive it.
+    if (m_vis == Visibility::Hidden) { stop_anim_timer(); return; }
 
     // Time-based easing (frame-rate independent, plan 002). dt is clamped so a
     // stall (debugger, sleep, hotkey) doesn't cause a huge single-frame jump.
@@ -574,14 +612,14 @@ void FloatingCloudsWindow::on_anim_tick()
     if (fabsf(np - m_display_progress) > 0.0005f) changed = true;
     m_display_progress = np;
 
-    // Opacity: time-based ease toward 1 (visible) / 0 (hiding) (tau 0.085s).
-    const float target_op = m_visible ? 1.0f : 0.0f;
+    // Opacity: time-based ease toward 1 (shown) / 0 (fading out) (tau 0.085s).
+    const float target_op = (m_vis == Visibility::Shown) ? 1.0f : 0.0f;
     const float no = approach_dt(m_anim_opacity, target_op, 0.085f, dtc);
     if (fabsf(no - m_anim_opacity) > 0.001f) changed = true;
     m_anim_opacity = no;
 
-    // Show/hide vertical drift (plan 004): 0 when visible, SHADOW_INSET when hiding.
-    const float lift_tgt = m_visible ? 0.0f : (float)SHADOW_INSET;
+    // Show/hide vertical drift (plan 004): 0 when shown, SHADOW_INSET while hiding.
+    const float lift_tgt = (m_vis == Visibility::Shown) ? 0.0f : (float)SHADOW_INSET;
     const float nl = approach_dt(m_anim_lift, lift_tgt, 0.12f, dtc);
     if (fabsf(nl - m_anim_lift) > 0.01f) changed = true;
     m_anim_lift = nl;
@@ -595,6 +633,14 @@ void FloatingCloudsWindow::on_anim_tick()
         m_button_state_layer[i] = nv;
     }
 
+    // Finish a fade-out as soon as the alpha has converged, BEFORE the
+    // changed/return short-circuit below: while playing, progress extrapolation
+    // sets changed nearly every frame and would otherwise starve SW_HIDE.
+    if (m_vis == Visibility::Hiding && m_anim_opacity <= 0.002f) {
+        finish_hide();
+        return;
+    }
+
     if (changed) {
         update_layered_window(); // applies opacity (ULW) / LWA (fallback)
         render_now();            // render immediately (frame-loop paced, not WM_PAINT)
@@ -602,12 +648,6 @@ void FloatingCloudsWindow::on_anim_tick()
     }
 
     // Nothing is animating (progress/opacity settled).
-    if (!m_visible) {
-        ShowWindow(SW_HIDE); // fade-out finished
-        FB2K_console_formatter() << "Floating Clouds: SW_HIDE after fade-out";
-        stop_anim_timer();
-        return;
-    }
     // Visualizer animates continuously: keep the frame loop alive.
     if (m_current_style == FloatingStyle::Visualizer) {
         render_now();
@@ -624,6 +664,15 @@ void FloatingCloudsWindow::on_anim_tick()
     if (m_playing && !m_paused) {
         render_now();
         return; // keep the frame loop running while playing
+    }
+    // Never abandon a fade midway: a WM_TIMER already queued when KillTimer ran
+    // can tick once with dt≈0 and change nothing. Keep the loop alive until the
+    // window is shown fully opaque or hidden.
+    // ponytail: value check + retry instead of timer-generation bookkeeping;
+    // ceiling is a brief 60fps spin if dt somehow stays 0.
+    if (m_vis == Visibility::Hiding || m_anim_opacity < 0.999f) {
+        start_anim_timer();
+        return;
     }
     stop_anim_timer();
 }
@@ -649,8 +698,9 @@ void FloatingCloudsWindow::set_style(FloatingStyle style)
     GetWindowRect(&rect);
     SetWindowPos(NULL, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER);
     
-    // Visualizer animates continuously -> make sure the frame loop is running.
-    if (m_current_style == FloatingStyle::Visualizer && m_visible) {
+    // Visualizer animates continuously -> make sure the frame loop is running
+    // (but never for a hidden window: it has no loop by design).
+    if (m_current_style == FloatingStyle::Visualizer && m_vis != Visibility::Hidden) {
         start_anim_timer();
     }
     
@@ -764,13 +814,15 @@ void FloatingCloudsWindow::on_playback_new_track(const char* title, const char* 
     m_target_progress = 0.0f;
     m_display_progress = 0.0f;
     m_last_playback_time_update = (double)GetTickCount64();
-    FB2K_console_formatter() << "Floating Clouds: new track (visible=" << (m_visible ? 1 : 0) << ")";
+    FB2K_console_formatter() << "Floating Clouds: new track (visible=" << (is_visible() ? 1 : 0)
+        << ", user_hidden=" << (m_user_hidden ? 1 : 0) << ")";
     
     // Get track length
     m_track_length = playback_control::get()->playback_get_length_ex();
     
-    // Show window if auto-hidden
-    if (m_visible == false) {
+    // Auto-hidden windows fade back in on the next track (designed behavior).
+    // A user-hidden window stays hidden until the user shows it again.
+    if (!m_user_hidden && m_vis != Visibility::Shown) {
         show_with_animation();
     }
     
@@ -798,13 +850,15 @@ void FloatingCloudsWindow::on_playback_stop()
     m_lyric_index = -1;
     m_plain_index = -1;
     m_lyrics.reset();
-    start_anim_timer();
+    // Keep the eased progress settling while the window can render; a hidden
+    // window has no frame loop.
+    if (m_vis != Visibility::Hidden) start_anim_timer();
     
-    // Auto-hide if configured
+    // Auto-hide if configured (auto-hide never overrides a user hide).
     cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
     FB2K_console_formatter() << "Floating Clouds: playback stop (auto_hide=" << (cfg_auto_hide.get() ? 1 : 0) << ")";
     if (cfg_auto_hide.get()) {
-        hide_with_animation();
+        hide_with_animation(false);
     }
     
     Invalidate();
@@ -816,7 +870,9 @@ void FloatingCloudsWindow::on_playback_time(double time)
     m_last_playback_time_update = (double)GetTickCount64();
     m_target_progress = m_track_length > 0 ? (float)(time / m_track_length) : 0.0f;
     m_target_progress = std::clamp(m_target_progress, 0.0f, 1.0f);
-    start_anim_timer(); // keep the frame loop alive while playing
+    // Keep the frame loop alive while playing, but never resurrect it for a
+    // hidden window (it has no frame loop by design).
+    if (m_vis != Visibility::Hidden) start_anim_timer();
 
     // Sync lyrics to the current time.
     if (m_lyrics_has_lrc && m_lyric_lines.get_size() > 0) {
@@ -1136,23 +1192,20 @@ void FloatingCloudsWindow::update_layered_window()
 int FloatingCloudsWindow::hit_test_button(CPoint point)
 {
     if (!style_has_buttons(m_current_style)) return -1;
-    
-    // Control button row: [<<] [Play/Pause] [>>] [Vol] [Playlist], bottom-centered.
-    const int btn_count = button_row_count();
-    const int btn_spacing = BUTTON_SPACING;
-    const int total_width = btn_count * BUTTON_SIZE + (btn_count - 1) * btn_spacing;
-    
+
+    // Same control-button row geometry as StyleRenderer::draw_button_row:
+    // [<<] [Play/Pause] [>>] [Vol] [Playlist], bottom-centered.
     CSize size = calculate_size();
-    int start_x = button_row_start_x(size.cx);
-    int btn_y = button_row_y(size.cy);
-    
-    for (int i = 0; i < btn_count; i++) {
-        int btn_x = start_x + i * (BUTTON_SIZE + btn_spacing);
+    const int start_x = button_row_start_x(size.cx);
+    const int btn_y = button_row_y(size.cy);
+
+    for (int i = 0; i < button_row_count(); i++) {
+        const int btn_x = start_x + i * (BUTTON_SIZE + BUTTON_SPACING);
         CRect btn_rect(btn_x, btn_y, btn_x + BUTTON_SIZE, btn_y + BUTTON_SIZE);
         if (btn_rect.PtInRect(point)) {
             return i;
         }
     }
-    
+
     return -1;
 }

@@ -29,6 +29,10 @@ class FloatingCloudsWindow :
         CWinTraits<WS_POPUP | WS_VISIBLE, WS_EX_TOOLWINDOW | WS_EX_TOPMOST>>,
     public D2DRenderer
 {
+    // Show/hide state machine: the one source of truth for visibility.
+    // Hiding = fade-out still on screen; Hidden = a real hidden window
+    // (SW_HIDE reached, frame timer stopped, hover polling stopped).
+    enum class Visibility { Shown, Hiding, Hidden };
 public:
     FloatingCloudsWindow();
     ~FloatingCloudsWindow();
@@ -65,9 +69,12 @@ public:
     // True if the given pointer is still the live window instance (safe after destruction)
     static bool is_current(FloatingCloudsWindow* w) { return s_instance == w; }
     
-    // Show/hide with animation
+    // Show/hide with animation. These are the ONLY visibility entry points:
+    // hotkey, tray, toggle and playback call sites all route through them.
+    // hide_with_animation(true) records a user hide, which a later track change
+    // must not undo (hide_with_animation(false) is the auto-hide path).
     void show_with_animation();
-    void hide_with_animation();
+    void hide_with_animation(bool user_initiated);
     
     // Toggle visibility
     void toggle_visibility();
@@ -106,7 +113,8 @@ public:
     
     // Getters
     bool is_drag_mode() const { return m_drag_mode; }
-    bool is_visible() const { return m_visible; }
+    // True while the window is on screen (Shown, or a fade-out in progress).
+    bool is_visible() const { return m_vis != Visibility::Hidden; }
     bool is_playing() const { return m_playing; }
     bool is_paused() const { return m_paused; }
     bool is_volume_muted() const { return m_volume <= -99.0f; }
@@ -163,6 +171,8 @@ private:
     void start_anim_timer();
     void stop_anim_timer();
     void on_anim_tick();
+    // Complete a fade-out: SW_HIDE + stop the frame loop + clear hover feedback.
+    void finish_hide();
     // Button hover feedback (polls while the cursor is over a button)
     void on_hover_tick();
     void clear_hover_state();
@@ -182,7 +192,11 @@ private:
 
     // State
     bool m_drag_mode = false;
-    bool m_visible = true;
+    Visibility m_vis = Visibility::Shown;
+    // True while the window is hidden because the user hid it (hotkey / tray /
+    // toggle); only an explicit show clears it. Auto-hide (playback stop)
+    // leaves it false so the next track fades the window back in.
+    bool m_user_hidden = false;
     bool m_playing = false;
     bool m_paused = false;
     FloatingStyle m_current_style = static_cast<FloatingStyle>(DEFAULT_STYLE);
@@ -233,7 +247,6 @@ private:
     float m_anim_opacity = 1.0f;
     float m_anim_lift = 0.0f;          // vertical drift during show/hide (plan 004)
     float m_button_state_layer[BUTTON_COUNT] = {}; // eased MD3 state-layer alpha (plan 001)
-    bool m_animating = false;
     float m_display_progress = 0.0f;   // eased value shown to the user
     float m_target_progress = 0.0f;    // real playback progress target
     UINT_PTR m_anim_timer = 0;
