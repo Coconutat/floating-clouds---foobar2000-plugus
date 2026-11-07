@@ -36,6 +36,70 @@ bool extract_trailing_id(const char* s, int& out_id)
 
 } // namespace
 
+namespace {
+
+// Index of a storefront by its iTunes country code (DEFAULT_REGION if unknown).
+int region_index_for_code(const char* code)
+{
+    if (code) {
+        for (int i = 0; i < kRegionCount; i++) {
+            if (pfc::stricmp_ascii(kRegions[i].code, code) == 0) return i;
+        }
+    }
+    return DEFAULT_REGION;
+}
+
+// How far a storefront is from what the user selected: the selection itself,
+// then the same metadata language, then the other Chinese script, then English,
+// then anything else. Lower tiers are tried first.
+int storefront_tier(const RegionInfo& selected, const RegionInfo& other)
+{
+    if (strcmp(selected.code, other.code) == 0) return 0;
+    if (strcmp(selected.lang, other.lang) == 0) return 1;
+    const bool selected_zh = (selected.lang[0] == 'z' && selected.lang[1] == 'h');
+    const bool other_zh = (other.lang[0] == 'z' && other.lang[1] == 'h');
+    if (selected_zh && other_zh) return 2;
+    if (strcmp(other.lang, "en") == 0) return 3;
+    return 4;
+}
+
+// Map Apple's web locale ("zh-Hans-CN", "en-US", ...) onto a metadata language
+// family from kRegions. A bare "zh" means Simplified on the Apple web site.
+pfc::string8 locale_family(const char* locale)
+{
+    if (!locale || !*locale) return pfc::string8();
+    for (int i = 0; i < kRegionCount; i++) {
+        const char* family = kRegions[i].lang;
+        if (_strnicmp(locale, family, strlen(family)) == 0) return pfc::string8(family);
+    }
+    if (_strnicmp(locale, "zh", 2) == 0) return pfc::string8("zh-Hans");
+    return pfc::string8();
+}
+
+// A music.apple.com link carries both a storefront path segment and a `?l=`
+// display language. The path only says where the link was copied from; `l=` is
+// the language the page actually shows. Honor `l=` when choosing the first
+// storefront to read, otherwise the pasted link would be ignored.
+void apply_locale_preference(const char* url, pfc::string8& region)
+{
+    const char* p = strstr(url, "?l=");
+    if (!p) p = strstr(url, "&l=");
+    if (!p) {
+        p = strstr(url, "?lang=");
+        if (!p) p = strstr(url, "&lang=");
+    }
+    if (!p) return;
+    const char* value = strchr(p, '=') + 1;
+    const char* end = value;
+    while (*end && *end != '&' && *end != '#') end++;
+    pfc::string8 locale;
+    locale.set_string(value, (t_size)(end - value));
+    const int idx = region_index_for_language(locale_family(locale.get_ptr()).get_ptr());
+    if (idx >= 0) region = kRegions[idx].code;
+}
+
+} // namespace
+
 bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_album_id)
 {
     out_region.reset();
@@ -64,7 +128,10 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_albu
                         pfc::string8 idstr;
                         idstr.set_string(id_start, (t_size)(id_end - id_start));
                         out_album_id = atoi(idstr.get_ptr());
-                        if (out_album_id > 0) return true;
+                        if (out_album_id > 0) {
+                            apply_locale_preference(s, out_region);
+                            return true;
+                        }
                     }
                 }
             }
@@ -90,7 +157,9 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_albu
     }
 
     // Final fallback: grab the album ID digits from anywhere in the string.
-    return extract_trailing_id(s, out_album_id);
+    if (!extract_trailing_id(s, out_album_id)) return false;
+    apply_locale_preference(s, out_region);
+    return true;
 }
 
 void fetch_album(int album_id, const char* region, abort_callback& abort, AppleAlbum& out)
@@ -236,20 +305,66 @@ bool has_traditional(const AppleAlbum& a)
 
 void fetch_album_auto(int album_id, const char* region, abort_callback& abort, AppleAlbum& out)
 {
-    fetch_album(album_id, region, abort, out); // throws on network failure
-    if (out.ok) return;
+    // The lookup API answers from exactly one storefront, and that storefront may
+    // know an album only as metadata without its track rows, or not know it at
+    // all (verified live: the same album is collection-only in CN and complete in
+    // HK). So walk the storefronts ordered by how well their metadata language
+    // fits the selection, and stop at the first complete answer.
+    const int selected_index = region_index_for_code(region);
+    const RegionInfo& selected = kRegions[selected_index];
 
-    // CN storefront often lacks an album that exists elsewhere. Fall back to HK
-    // and convert its Traditional Chinese metadata to Simplified Chinese.
-    if (out.not_available && pfc::stricmp_ascii(region, "cn") == 0) {
-        AppleAlbum hk;
-        fetch_album(album_id, "hk", abort, hk); // throws on network failure
-        if (hk.ok) {
-            to_simplified(hk);
-            // hk.region stays "hk": it is the real source storefront. The
-            // conversion is recorded separately (T2S is independent of source).
-            hk.t2s_applied = true;
-            out = hk;
+    int order[kRegionCount];
+    for (int i = 0; i < kRegionCount; i++) order[i] = i;
+    for (int i = 1; i < kRegionCount; i++) { // stable insertion sort by tier
+        const int value = order[i];
+        const int value_tier = storefront_tier(selected, kRegions[value]);
+        int j = i - 1;
+        while (j >= 0 && storefront_tier(selected, kRegions[order[j]]) > value_tier) {
+            order[j + 1] = order[j];
+            j--;
         }
+        order[j + 1] = value;
+    }
+
+    out = AppleAlbum();
+    bool have_album_only = false;
+    AppleAlbum album_only;
+    pfc::string8 first_error;
+    bool have_error = false;
+
+    for (int k = 0; k < kRegionCount; k++) {
+        abort.check();
+        AppleAlbum candidate;
+        try {
+            fetch_album(album_id, kRegions[order[k]].code, abort, candidate);
+        } catch (const exception_aborted&) {
+            throw;
+        } catch (const pfc::exception& e) {
+            if (!have_error) { first_error = e.what(); have_error = true; }
+            continue;
+        }
+        if (!candidate.ok) continue;
+        if (candidate.tracks.get_size() > 0) { out = candidate; break; }
+        if (!have_album_only) { album_only = candidate; have_album_only = true; }
+    }
+
+    if (!out.ok) {
+        if (!have_album_only) {
+            out.not_available = true;
+            out.error = "This album was not found in any Apple Music storefront.";
+            if (have_error) {
+                out.error = pfc::string_formatter() << out.error << " Last network error: " << first_error;
+            }
+            return;
+        }
+        out = album_only; // metadata only: no storefront had the track list
+    }
+
+    // A Simplified Chinese selection wants Simplified output: data from a
+    // Traditional storefront is converted char-by-char (there is no official CN
+    // metadata for albums CN does not carry).
+    if (pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0 && has_traditional(out)) {
+        to_simplified(out);
+        out.t2s_applied = true;
     }
 }

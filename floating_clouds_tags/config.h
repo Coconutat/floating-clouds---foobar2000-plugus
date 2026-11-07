@@ -19,23 +19,39 @@ constexpr int32_t DEFAULT_LANGUAGE = 0;
 constexpr int32_t DEFAULT_REGION   = 0; // CN
 constexpr bool    DEFAULT_OVERWRITE = false;
 
-// --- Region table: storefront code + label (metadata language) ---
+// --- Region table: storefront code + metadata language + label ---
+// The storefront decides which catalog (and therefore which metadata language)
+// the lookup API reads, so this table doubles as the metadata-language switch.
 struct RegionInfo {
     const char* code;        // iTunes country param / URL region segment
+    const char* lang;        // metadata language family: zh-Hans, zh-Hant, en, ja, ko
     const wchar_t* label;    // English UI
     const wchar_t* label_zh; // Chinese UI
 };
 
+// Append new storefronts at the END: cfg_guids::default_region stores an index
+// into this table, so reordering it would silently change everyone's selection.
 inline const RegionInfo kRegions[] = {
-    { "cn", L"CN (简体中文)",   L"CN（简体中文）" },
-    { "hk", L"HK (繁體中文)",   L"HK（繁體中文）" },
-    { "tw", L"TW (繁體中文)",   L"TW（繁體中文）" },
-    { "jp", L"JP (日本語)",     L"JP（日本語）" },
-    { "us", L"US (English)",    L"US（English）" },
-    { "gb", L"GB (English)",    L"GB（English）" },
-    { "kr", L"KR (한국어)",     L"KR（한국어）" },
+    { "cn", "zh-Hans", L"CN (简体中文)",   L"CN（简体中文）" },
+    { "hk", "zh-Hant", L"HK (繁體中文)",   L"HK（繁體中文）" },
+    { "tw", "zh-Hant", L"TW (繁體中文)",   L"TW（繁體中文）" },
+    { "jp", "ja",      L"JP (日本語)",     L"JP（日本語）" },
+    { "us", "en",      L"US (English)",    L"US（English）" },
+    { "gb", "en",      L"GB (English)",    L"GB（English）" },
+    { "kr", "ko",      L"KR (한국어)",     L"KR（한국어）" },
+    { "sg", "en",      L"SG (English)",    L"SG（English）" },
 };
 constexpr int32_t kRegionCount = (int32_t)(sizeof(kRegions) / sizeof(kRegions[0]));
+
+// First storefront in kRegions order whose metadata language is `lang`, or -1.
+inline int region_index_for_language(const char* lang)
+{
+    if (!lang || !*lang) return -1;
+    for (int i = 0; i < kRegionCount; i++) {
+        if (pfc::stricmp_ascii(kRegions[i].lang, lang) == 0) return i;
+    }
+    return -1;
+}
 
 // --- Tag fields (bitmask) ---
 enum TagField : uint32_t {

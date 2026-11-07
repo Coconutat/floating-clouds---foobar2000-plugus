@@ -207,16 +207,26 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
     UpdatePreview();
     ApplyEnabled(true);
 
-    // CN->HK fallback: tell the user plainly that these are char-by-char
-    // converted (Traditional->Simplified) HK tags, not official CN metadata.
+    // Tell the user plainly that these are char-by-char converted
+    // (Traditional->Simplified) tags from another storefront, not official CN
+    // metadata: the selected storefront either lacks the album or its track list.
     if (m_album.t2s_applied) {
+        pfc::string8 source;
+        const int source_index = region_index_by_code(m_album.region.get_ptr());
+        if (source_index >= 0) {
+            pfc::stringcvt::string_utf8_from_wide label(region_label(source_index));
+            source = label.get_ptr();
+        } else {
+            source = m_album.region;
+        }
         popup_message::g_show(
-            tr8("This album is not available on the CN storefront. Tags were fetched "
-                "from the HK storefront and converted character-by-character from "
-                "Traditional Chinese to Simplified Chinese. Some titles or names may "
-                "differ from mainland conventions.",
-                "该专辑在 CN 地区不存在。已改从港版获取标签，并将繁体中文逐字转换为简体中文。"
-                "个别标题或译名可能与大陆习惯不同。"),
+            pfc::string_formatter()
+                << tr8("This album is not available on the selected storefront. Tags were fetched from ",
+                       "该专辑在所选地区不存在，已改从 ")
+                << source
+                << tr8(" and converted character-by-character from Traditional Chinese to Simplified Chinese. "
+                       "Some titles or names may differ from mainland conventions.",
+                       " 地区获取，并将繁体中文逐字转换为简体中文。个别标题或译名可能与大陆习惯不同。"),
             tr8("Apple Music Tags", "Apple Music 标签更新"));
     }
 }
@@ -236,6 +246,14 @@ void TagsDialog::UpdatePreview()
     preview += L"    ";
     preview += tr(L"Region: ", L"地区：");
     preview += region_label(m_region_index);
+    // The selection is only a preference: the fetch chain may have answered from
+    // another storefront, so say where the metadata actually came from.
+    const int source_index = region_index_by_code(m_album.region.get_ptr());
+    if (source_index >= 0 && source_index != m_region_index) {
+        preview += tr(L" (metadata fetched from ", L"（元数据取自 ");
+        preview += region_label(source_index);
+        preview += tr(L")", L"）");
+    }
     if (m_album.t2s_applied) {
         preview += tr(L" (converted from Traditional Chinese, char-by-char, not official Simplified)",
                       L"（繁体逐字转简，非官方简中）");

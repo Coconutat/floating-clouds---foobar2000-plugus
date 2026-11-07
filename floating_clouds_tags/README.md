@@ -4,16 +4,16 @@
 
 A foobar2000 component that fetches the official Apple Music album tags for the **storefront region you pick** and writes them to the selected tracks.
 
-> Key idea: the **region is the metadata language**. `cn` → 简体中文, `hk`/`tw` → 繁體中文, `jp` → 日本語, `us` → English. No translation engine — you get Apple's own per-storefront metadata.
+> Key idea: the **region is the metadata language**. `cn` → 简体中文, `hk`/`tw` → 繁體中文, `jp` → 日本語, `us`/`gb`/`sg` → English, `kr` → 한국어. No translation engine — you get Apple's own per-storefront metadata.
 
 ## Features
 
-- **Paste an Apple Music link (or album ID)** — the clipboard is read automatically when the dialog opens; the album ID and a default region are extracted from the URL
-- **Region = metadata language** — switch `CN / HK / TW / JP / US / GB / KR` to write tags in that storefront's language; the dropdown is never overridden by the pasted URL once you've touched it
+- **Paste an Apple Music link (or album ID)** — the clipboard is read automatically when the dialog opens; the album ID and a default region are extracted from the URL (a `?l=zh-Hans-CN`-style language parameter picks the region by language family)
+- **Region = metadata language** — switch `CN / HK / TW / JP / US / GB / SG / KR` to write tags in that storefront's language; the dropdown is never overridden by the pasted URL once you've touched it
 - **Field-level control** — pick which tags to write (title, album, artist, album artist, genre, release date, track #, disc #, composer, copyright, total tracks, total discs, explicit)
 - **Fill-empty by default, overwrite on demand** — safe by default; a global "overwrite existing" toggle forces replacement
 - **Emergency "force write in selection order"** — for broken track numbers: writes the Nth selected track with the Nth Apple track's tags, top to bottom, ignoring track-number matching (implies overwrite)
-- **CN → HK fallback** — if an album doesn't exist on the CN storefront, automatically fetches the HK edition and converts it **character-by-character** to Simplified Chinese (clearly flagged in the UI; not official CN localization)
+- **Storefront fallback** — if the selected storefront doesn't have the album (or has only an empty shell without tracks), the component walks neighbouring storefronts by language (same language → the other Chinese script → English → the rest) and converts **character-by-character** to Simplified Chinese when a Simplified selection ends up on Traditional metadata (clearly flagged in the UI; not official CN localization)
 - **Generic "Convert to Simplified Chinese"** — one click converts any Traditional-source fetched tags (HK/TW etc.) to Simplified; the preview hints "Traditional Chinese detected" when applicable
 - **Local tag conversion** — a standalone "Convert Selected Tags to Simplified Chinese…" command converts your tracks' existing Traditional local tags to standard Simplified, with no Apple fetch involved (confirms first; reports "converted N / skipped M")
 - **Safe writes** — duration/audio properties are never touched; unmatched tracks are skipped and reported ("updated N / skipped M")
@@ -32,20 +32,20 @@ A foobar2000 component that fetches the official Apple Music album tags for the 
 | Control | Meaning |
 | --- | --- |
 | Album URL or ID | link or bare numeric album ID (clipboard prefilled) |
-| Region | storefront = metadata language (defaults to the URL region until you change it) |
+| Region | storefront = metadata language (defaults to the URL region until you change it; auto-falls back by language when unavailable — the preview names the actual source) |
 | Fetch | background lookup via the iTunes Lookup API (cancelable) |
 | Fields to update | per-field checkboxes (all checked except Explicit) |
 | Overwrite existing tags | off = fill empty only; on = force replace |
 | Force write in selection order | emergency: positional matching, implies overwrite |
 | Convert to Simplified Chinese | generic toggle: char-by-char 繁→简 of any Traditional fetched tags; preview hints when detected |
 
-## Traditional→Simplified (independent) & CN → HK fallback
+## Traditional→Simplified (independent) & storefront fallback
 
 - **T2S conversion is an independent capability** (Windows NLS char-by-char mapping, not official localization): the dialog's "Convert to Simplified Chinese" toggle converts any **Traditional-source** fetched tags (HK/TW etc.); the preview hints "Traditional Chinese detected" when applicable.
 - **Local tag conversion**: the standalone "Convert Selected Tags to Simplified Chinese…" menu command converts your tracks' existing Traditional local tags to standard Simplified (all text fields; numeric/empty/already-Simplified skipped; confirms first; reports "converted N / skipped M").
-- **CN → HK fallback** (data-source behavior): when region is **CN** and the album is not available there, the component **automatically retries the HK storefront** and applies the T2S conversion. The real source storefront (hk) and whether T2S was applied are tracked separately.
+- **Storefront fallback** (data-source behavior): the selected storefront is tried first; if the album isn't there (or comes back as an empty shell with no tracks), neighbouring storefronts are tried by language — same language → the other Chinese script → English → the rest — and the first result **with tracks** wins. If the selection is Simplified Chinese and the metadata came from HK/TW, it is converted character-by-character with `t2s_applied` recorded separately. The preview names the actual source.
 - This is **not official CN localization** — a popup and the preview explicitly say the tags were converted, because some titles or names may differ from mainland conventions.
-- Picking any non-CN region (HK/US/JP…) never triggers the CN fallback.
+- Only when **no** storefront has the album does the dialog say it wasn't found anywhere, instead of misreporting an SG/HK-only release as unavailable in your region.
 
 ## Proxy
 
