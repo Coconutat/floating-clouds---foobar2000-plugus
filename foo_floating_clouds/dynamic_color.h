@@ -212,16 +212,53 @@ inline SkinTokens scheme_md3(uint32_t seed, bool light)
     return t;
 }
 
-// The Mist skin keeps its neutral panel: the cover only tints the accents, so
-// "album colour" does not turn the frosted card into coloured plastic.
+// The Mist material, tinted by the cover. Same structure as the static Mist
+// tokens (near-opaque body, 1px inner rim, specular top edge, squircle); only
+// the hues come from the seed. Two chroma budgets: the panel takes a real but
+// restrained tint, the text a trace, because the highlight has to stay light and
+// the text has to stay neutral for contrast.
+//
+// Note the tone choice: a tone 99 panel would be neutral no matter the seed -
+// the gamut simply has no room for chroma that close to white - so the tinted
+// panel sits at 96-99 (light) / 12-17 (dark) where the bell curve still leaves
+// room for a visible hue.
 inline SkinTokens scheme_mist(uint32_t seed, bool light)
 {
     const SkinTokens& base = light ? mist_skin_light : mist_skin;
+    const Hcl p = hcl_of(seed);
+    // A dark panel carries a real tint; a light one is much closer to white,
+    // where more chroma would read as coloured paper instead of tinted glass.
+    const float panel = light ? 0.55f : 0.75f;
+    const float ink = 0.07f;     // text keeps its neutrality
+    auto pn = [&](float tone) { return tone_of(p, panel, tone); };
+    auto nt = [&](float tone) { return tone_of(p, ink, tone); };
+
     const SkinTokens accent = scheme_md3(seed, light);
     SkinTokens t = base;
+
+    if (light) {
+        t.surface = pn(96);              // Hwnd fallback / opaque fill
+        t.surface_high = pn(93);
+        t.surface_highest = pn(89);
+        t.card_fill_top = pn(97);
+        t.card_fill_bottom = pn(94);
+        t.on_surface = nt(9);
+        t.on_surface_variant = nt(34);
+    } else {
+        t.surface = pn(14);
+        t.surface_high = pn(19);
+        t.surface_highest = pn(24);
+        t.card_fill_top = pn(18);
+        t.card_fill_bottom = pn(12);
+        t.on_surface = nt(93);
+        t.on_surface_variant = nt(76);
+    }
+
+    // Accents come from the full-chroma scheme, so the controls still pop.
     t.primary = accent.primary;
     t.tertiary = accent.tertiary;
-    t.on_button_active = t.primary;   // tinted fill: the glyph keeps the accent
+    t.on_button_active = t.primary;      // tinted fill: the glyph keeps the accent
+    // The specular highlight stays neutral white: it is reflected light.
     return t;
 }
 
