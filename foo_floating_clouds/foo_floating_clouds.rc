@@ -35,43 +35,43 @@ IDI_ICON1               ICON                    "floating_clouds.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Preferences dialog
-IDD_PREFERENCES DIALOGEX 0, 0, 332, 352
+// Kept at 332 x 246 DLU: foobar2000's preferences page viewport clips the page
+// below ~282 DLU with no scrollbar, so the whole page must stay well above it.
+IDD_PREFERENCES DIALOGEX 0, 0, 332, 246
 STYLE DS_SETFONT | WS_CHILD
 FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
 BEGIN
-    GROUPBOX        "Hotkeys",IDC_GRP_HOTKEYS,8,4,316,64
-    LTEXT           "Drag mode toggle:",IDC_LBL_DRAG,16,20,72,8
-    EDITTEXT        IDC_HOTKEY_DRAG,96,18,80,12,ES_AUTOHSCROLL | ES_READONLY
-    LTEXT           "Show/Hide:",IDC_LBL_SHOWHIDE,200,20,48,8
-    EDITTEXT        IDC_HOTKEY_VISIBILITY,252,18,60,12,ES_AUTOHSCROLL | ES_READONLY
-    LTEXT           "Cycle style:",IDC_LBL_CYCLE,16,36,52,8
-    EDITTEXT        IDC_HOTKEY_STYLE,96,34,80,12,ES_AUTOHSCROLL | ES_READONLY
-    LTEXT           "Cycle skin:",IDC_LBL_CYCLE_SKIN,200,36,48,8
-    EDITTEXT        IDC_HOTKEY_SKIN,252,34,60,12,ES_AUTOHSCROLL | ES_READONLY
-    LTEXT           "Click a box, then press the new key combo (needs Ctrl/Alt/Shift/Win)",IDC_LBL_HOTKEY_HINT,16,52,300,8
+    GROUPBOX        "Hotkeys",IDC_GRP_HOTKEYS,8,4,316,56
+    LTEXT           "Drag mode toggle:",IDC_LBL_DRAG,16,18,72,8
+    EDITTEXT        IDC_HOTKEY_DRAG,96,16,80,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Show/Hide:",IDC_LBL_SHOWHIDE,200,18,48,8
+    EDITTEXT        IDC_HOTKEY_VISIBILITY,252,16,60,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Cycle style:",IDC_LBL_CYCLE,16,34,52,8
+    EDITTEXT        IDC_HOTKEY_STYLE,96,32,80,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Cycle skin:",IDC_LBL_CYCLE_SKIN,200,34,48,8
+    EDITTEXT        IDC_HOTKEY_SKIN,252,32,60,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Click a box, then press the new key combo (needs Ctrl/Alt/Shift/Win)",IDC_LBL_HOTKEY_HINT,16,48,300,8
 
-    GROUPBOX        "Appearance",IDC_GRP_APPEARANCE,8,72,316,68
-    LTEXT           "Opacity:",IDC_LBL_OPACITY,16,88,32,8
-    CONTROL         "",IDC_OPACITY,"msctls_trackbar32",TBS_AUTOTICKS | WS_TABSTOP,56,84,100,20
-    LTEXT           "220",IDC_OPACITY_LABEL,160,88,24,8
-    CONTROL         "Auto-hide when stopped",IDC_AUTO_HIDE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,108,104,10
-    CONTROL         "Debug logging (console)",IDC_DEBUG_LOG,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,124,150,10
+    GROUPBOX        "Appearance",IDC_GRP_APPEARANCE,8,64,316,60
+    LTEXT           "Opacity:",IDC_LBL_OPACITY,16,78,32,8
+    CONTROL         "",IDC_OPACITY,"msctls_trackbar32",TBS_AUTOTICKS | WS_TABSTOP,56,74,100,20
+    LTEXT           "220",IDC_OPACITY_LABEL,160,78,24,8
+    CONTROL         "Auto-hide when stopped",IDC_AUTO_HIDE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,96,104,10
+    CONTROL         "Debug logging (console)",IDC_DEBUG_LOG,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,110,150,10
 
-    GROUPBOX        "Style",IDC_GRP_STYLE,8,140,316,64
-    LTEXT           "Default style:",IDC_LBL_DEFAULT_STYLE,16,156,56,8
-    COMBOBOX        IDC_DEFAULT_STYLE,80,154,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
-    CONTROL         "Attach wave baseline (Visualizer+Cover)",IDC_ATTACHED_BASELINE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,176,210,10
+    GROUPBOX        "Style",IDC_GRP_STYLE,8,128,316,46
+    LTEXT           "Default style:",IDC_LBL_DEFAULT_STYLE,16,142,56,8
+    COMBOBOX        IDC_DEFAULT_STYLE,80,140,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    CONTROL         "Attach wave baseline (Visualizer+Cover)",IDC_ATTACHED_BASELINE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,158,210,10
 
-    GROUPBOX        "Skin",IDC_GRP_SKIN,8,208,316,80
-    LTEXT           "Default skin:",IDC_LBL_DEFAULT_SKIN,16,224,56,8
-    COMBOBOX        IDC_SKIN,80,222,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
-    LTEXT           "Color mode:",IDC_LBL_COLOR_MODE,16,248,56,8
-    COMBOBOX        IDC_COLOR_MODE,80,246,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
-    LTEXT           "Font family:",IDC_LBL_FONT_FAMILY,16,272,150,8
-    EDITTEXT        IDC_FONT_FAMILY,170,270,150,12,ES_AUTOHSCROLL
-
-    GROUPBOX        "Language",IDC_GRP_LANGUAGE,8,292,316,52
-    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,16,308,52,8
-    COMBOBOX        IDC_LANGUAGE,80,306,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    GROUPBOX        "Skin",IDC_GRP_SKIN,8,178,316,60
+    LTEXT           "Default skin:",IDC_LBL_DEFAULT_SKIN,16,192,56,8
+    COMBOBOX        IDC_SKIN,80,190,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    LTEXT           "Color mode:",IDC_LBL_COLOR_MODE,16,208,56,8
+    COMBOBOX        IDC_COLOR_MODE,80,206,120,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    LTEXT           "Font family:",IDC_LBL_FONT_FAMILY,16,224,58,8
+    COMBOBOX        IDC_FONT_FAMILY,76,222,104,100,CBS_DROPDOWNLIST | WS_TABSTOP
+    LTEXT           "UI Language:",IDC_LBL_LANGUAGE,184,224,66,8
+    COMBOBOX        IDC_LANGUAGE,252,222,62,100,CBS_DROPDOWNLIST | WS_TABSTOP
 END
 #endif

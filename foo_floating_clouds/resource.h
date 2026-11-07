@@ -32,7 +32,6 @@
 #define IDC_LBL_OPACITY                 1107
 #define IDC_LBL_DEFAULT_STYLE           1108
 #define IDC_GRP_STYLE                   1109
-#define IDC_GRP_LANGUAGE                1110
 #define IDC_LBL_LANGUAGE                1111
 #define IDC_GRP_SKIN                    1112
 #define IDC_LBL_DEFAULT_SKIN            1113

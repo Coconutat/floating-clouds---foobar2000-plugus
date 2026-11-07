@@ -7,6 +7,7 @@
 #include "floating_window.h"
 #include "localization.h"
 #include <string>
+#include <vector>
 
 // ============================================================================
 // Floating Clouds Preferences page
@@ -70,6 +71,128 @@ static std::wstring hotkey_to_string(uint32_t modifiers, uint32_t vk)
     return s;
 }
 
+// --- installed font faces ---------------------------------------------------
+// IDC_FONT_FAMILY item 0 is "(Follow foobar2000)" (cfg stores ""); every other
+// item is a face reported by the system. lfFaceName is already the localized
+// family name, so Chinese faces show up in Chinese without any extra work.
+
+static int CALLBACK enum_font_proc(const LOGFONTW* lf, const TEXTMETRICW*, DWORD, LPARAM lp)
+{
+    if (lf->lfFaceName[0] == L'@') return 1; // vertical CJK alias of a normal face
+    auto* faces = reinterpret_cast<std::vector<std::wstring>*>(lp);
+    for (const auto& f : *faces) {
+        if (::CompareStringOrdinal(f.c_str(), -1, lf->lfFaceName, -1, TRUE) == CSTR_EQUAL) return 1;
+    }
+    faces->push_back(lf->lfFaceName);
+    return 1;
+}
+
+// ponytail: a screen DC is enough to enumerate names; no font object needed.
+static std::vector<std::wstring> enum_font_faces()
+{
+    std::vector<std::wstring> faces;
+    LOGFONTW lf = {};
+    lf.lfCharSet = DEFAULT_CHARSET;
+    HDC dc = ::GetDC(nullptr);
+    if (dc) {
+        ::EnumFontFamiliesExW(dc, &lf, enum_font_proc, reinterpret_cast<LPARAM>(&faces), 0);
+        ::ReleaseDC(nullptr, dc);
+    }
+    // Enumeration order is per-charset groups, not alphabetical; sort for the dropdown.
+    (std::sort)(faces.begin(), faces.end(), [](const std::wstring& a, const std::wstring& b) {
+        return ::CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_LESS_THAN;
+    });
+    return faces;
+}
+
+// Rebuild a localized-name combo, keeping the current selection.
+template <typename NameFn>
+static void refill_combo(CComboBox combo, int count, NameFn name)
+{
+    int sel = combo.GetCurSel();
+    combo.ResetContent();
+    for (int i = 0; i < count; i++) combo.AddString(name(i));
+    combo.SetCurSel(sel);
+}
+
+// --- cfg snapshot -----------------------------------------------------------
+// PrefsState lives in preferences.h; the key tables and writers stay here.
+namespace {
+const GUID* const k_hk_mod_guids[4] = { &cfg_guids::hk_drag_mod, &cfg_guids::hk_vis_mod, &cfg_guids::hk_style_mod, &cfg_guids::hk_skin_mod };
+const GUID* const k_hk_vk_guids[4]  = { &cfg_guids::hk_drag_vk, &cfg_guids::hk_vis_vk, &cfg_guids::hk_style_vk, &cfg_guids::hk_skin_vk };
+const uint32_t k_hk_mod_defaults[4] = { DEFAULT_HK_DRAG_MOD, DEFAULT_HK_VIS_MOD, DEFAULT_HK_STYLE_MOD, DEFAULT_HK_SKIN_MOD };
+const uint32_t k_hk_vk_defaults[4]  = { DEFAULT_HK_DRAG_VK, DEFAULT_HK_VIS_VK, DEFAULT_HK_STYLE_VK, DEFAULT_HK_SKIN_VK };
+
+void write_hotkeys(const PrefsState& s)
+{
+    for (int i = 0; i < 4; i++) {
+        cfg_var_modern::cfg_int mod(*k_hk_mod_guids[i], k_hk_mod_defaults[i]);
+        cfg_var_modern::cfg_int vk(*k_hk_vk_guids[i], k_hk_vk_defaults[i]);
+        mod = (int64_t)s.hk_mod[i];
+        vk = (int64_t)s.hk_vk[i];
+    }
+}
+} // namespace
+
+void PrefsState::load()
+{
+    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
+    cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
+    cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
+    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
+    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
+    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
+    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
+    cfg_var_modern::cfg_int cfg_lang(cfg_guids::language, DEFAULT_LANGUAGE);
+    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
+
+    opacity = (int)cfg_opacity.get_value();
+    auto_hide = cfg_auto_hide.get();
+    debug_log = cfg_debug.get();
+    attached_baseline = cfg_attached.get();
+    style = (int)cfg_style.get_value();
+    skin = (int)cfg_skin.get_value();
+    color_mode = (int)cfg_mode.get_value();
+    language = (int)cfg_lang.get_value();
+    const char* f = cfg_font.get();
+    font = f ? f : "";
+
+    for (int i = 0; i < 4; i++) {
+        cfg_var_modern::cfg_int mod(*k_hk_mod_guids[i], k_hk_mod_defaults[i]);
+        cfg_var_modern::cfg_int vk(*k_hk_vk_guids[i], k_hk_vk_defaults[i]);
+        hk_mod[i] = (uint32_t)mod.get_value();
+        hk_vk[i] = (uint32_t)vk.get_value();
+    }
+}
+
+void PrefsState::apply() const
+{
+    { cfg_var_modern::cfg_int v(cfg_guids::opacity, DEFAULT_OPACITY); v = opacity; }
+    { cfg_var_modern::cfg_bool v(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE); v = auto_hide; }
+    { cfg_var_modern::cfg_bool v(cfg_guids::debug_logging, false); v = debug_log; }
+    { cfg_var_modern::cfg_bool v(cfg_guids::vis_art_attached_baseline, false); v = attached_baseline; }
+    { cfg_var_modern::cfg_int v(cfg_guids::current_style, DEFAULT_STYLE); v = style; }
+    { cfg_var_modern::cfg_int v(cfg_guids::current_skin, DEFAULT_SKIN); v = skin; }
+    { cfg_var_modern::cfg_int v(cfg_guids::color_mode, DEFAULT_COLOR_MODE); v = color_mode; }
+    { cfg_var_modern::cfg_int v(cfg_guids::language, DEFAULT_LANGUAGE); v = language; }
+    { cfg_var_modern::cfg_string v(cfg_guids::font_family, ""); v = font.c_str(); }
+    write_hotkeys(*this);
+}
+
+bool PrefsState::equals(const PrefsState& other) const
+{
+    // Controls are live-persisted, but the ones listed here stay tracked so the
+    // page still reports "changed" and Apply keeps its meaning. Language, debug
+    // logging and the hotkeys take effect instantly and never dirty the page.
+    return opacity == other.opacity &&
+           auto_hide == other.auto_hide &&
+           attached_baseline == other.attached_baseline &&
+           style == other.style &&
+           skin == other.skin &&
+           color_mode == other.color_mode &&
+           font == other.font;
+}
+
 // --- hotkey capture edit control --------------------------------------------
 // Click the box, then press a new key combination (must include a modifier).
 
@@ -82,6 +205,9 @@ public:
         m_mod = modifiers; m_vk = vk; m_armed = false;
         SetWindowText(hotkey_to_string(modifiers, vk).c_str());
     }
+
+    uint32_t get_mod() const { return m_mod; }
+    uint32_t get_vk() const { return m_vk; }
 
     BEGIN_MSG_MAP(HotkeyEdit)
         MESSAGE_HANDLER(WM_SETFOCUS, OnSetFocus)
@@ -171,6 +297,7 @@ public:
         COMMAND_HANDLER_EX(IDC_SKIN, CBN_SELCHANGE, OnSkinChanged)
         COMMAND_HANDLER_EX(IDC_COLOR_MODE, CBN_SELCHANGE, OnColorModeChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnLanguageChanged)
+        COMMAND_HANDLER_EX(IDC_FONT_FAMILY, CBN_SELCHANGE, OnFontChanged)
         MESSAGE_HANDLER(FC_WM_HOTKEY_CAPTURED, OnHotkeyCaptured)
     END_MSG_MAP()
 
@@ -184,14 +311,19 @@ private:
     void OnSkinChanged(UINT, int, CWindow);
     void OnColorModeChanged(UINT, int, CWindow);
     void OnLanguageChanged(UINT, int, CWindow);
+    void OnFontChanged(UINT, int, CWindow);
     void ReloadLocalizedStrings();
     LRESULT OnHotkeyCaptured(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
+    void SetControls(const PrefsState& s);
+    PrefsState ReadUI();
+    void Commit();
     bool HasChanged();
     void OnChanged();
     void UpdateOpacityLabel(int opacity);
 
     const preferences_page_callback::ptr m_callback;
     bool m_initialized = false;
+    PrefsState m_loaded; // cfg snapshot at open / after the last apply
 
     // Dark mode support
     fb2k::CDarkModeHooks m_dark;
@@ -204,107 +336,141 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
 {
     m_dark.AddDialogWithControls(*this);
 
-    // Read current values from cfg_var
-    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
-    cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
-    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-
-    // Opacity slider
-    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
-    slider.SetRange(50, 255, TRUE);
-    slider.SetPos((int)cfg_opacity.get_value());
-    UpdateOpacityLabel((int)cfg_opacity.get_value());
-
-    // Auto-hide checkbox
-    Button_SetCheck(GetDlgItem(IDC_AUTO_HIDE), cfg_auto_hide.get() ? BST_CHECKED : BST_UNCHECKED);
-
-    // Debug logging checkbox
-    cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
-    Button_SetCheck(GetDlgItem(IDC_DEBUG_LOG), cfg_debug.get() ? BST_CHECKED : BST_UNCHECKED);
-
-    // VisualizerArt attached-baseline checkbox
-    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
-    Button_SetCheck(GetDlgItem(IDC_ATTACHED_BASELINE), cfg_attached.get() ? BST_CHECKED : BST_UNCHECKED);
-
-    // Style combo (localized names)
-    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    for (int i = 0; i < (int)FloatingStyle::Count; i++) {
-        style_combo.AddString(tr_style(static_cast<FloatingStyle>(i)));
-    }
-    style_combo.SetCurSel((int)cfg_style.get_value());
-
-    // Skin combo (localized names)
-    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
-    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    for (int i = 0; i < (int)FloatingSkin::Count; i++) {
-        skin_combo.AddString(tr_skin(static_cast<FloatingSkin>(i)));
-    }
-    int skin_sel = (int)cfg_skin.get_value();
-    if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
-    skin_combo.SetCurSel(skin_sel);
-
-    // Color mode combo (localized names)
-    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
-    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    for (int i = 0; i < (int)FloatingColorMode::Count; i++) {
-        mode_combo.AddString(tr_color_mode(static_cast<FloatingColorMode>(i)));
-    }
-    int mode_sel = (int)cfg_mode.get_value();
-    if (mode_sel < 0 || mode_sel >= (int)FloatingColorMode::Count) mode_sel = DEFAULT_COLOR_MODE;
-    mode_combo.SetCurSel(mode_sel);
-
-    // Font family (empty = follow foobar2000's default UI font)
-    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
-    pfc::stringcvt::string_wide_from_utf8 wide_font(cfg_font.get());
-    SetDlgItemTextW(IDC_FONT_FAMILY, wide_font.is_empty() ? L"" : wide_font.get_ptr());
-
-    // Language combo
-    CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
-    lang_combo.AddString(L"English");
-    lang_combo.AddString(L"\x4E2D\x6587"); // 中文
-    cfg_var_modern::cfg_int cfg_lang(cfg_guids::language, DEFAULT_LANGUAGE);
-    int lang_sel = (int)cfg_lang.get_value();
-    if (lang_sel < 0 || lang_sel > 1) lang_sel = 0;
-    lang_combo.SetCurSel(lang_sel);
-
-    // Apply localized texts for all controls
-    ReloadLocalizedStrings();
+    m_loaded.load();
 
     // Hotkey capture boxes - click a box, then press a new key combination
     m_hk_drag.SubclassWindow(GetDlgItem(IDC_HOTKEY_DRAG));
     m_hk_vis.SubclassWindow(GetDlgItem(IDC_HOTKEY_VISIBILITY));
     m_hk_style.SubclassWindow(GetDlgItem(IDC_HOTKEY_STYLE));
     m_hk_skin.SubclassWindow(GetDlgItem(IDC_HOTKEY_SKIN));
-    {
-        cfg_var_modern::cfg_int dm(cfg_guids::hk_drag_mod, DEFAULT_HK_DRAG_MOD);
-        cfg_var_modern::cfg_int dv(cfg_guids::hk_drag_vk, DEFAULT_HK_DRAG_VK);
-        cfg_var_modern::cfg_int vm(cfg_guids::hk_vis_mod, DEFAULT_HK_VIS_MOD);
-        cfg_var_modern::cfg_int vv(cfg_guids::hk_vis_vk, DEFAULT_HK_VIS_VK);
-        cfg_var_modern::cfg_int sm(cfg_guids::hk_style_mod, DEFAULT_HK_STYLE_MOD);
-        cfg_var_modern::cfg_int sv(cfg_guids::hk_style_vk, DEFAULT_HK_STYLE_VK);
-        cfg_var_modern::cfg_int km(cfg_guids::hk_skin_mod, DEFAULT_HK_SKIN_MOD);
-        cfg_var_modern::cfg_int kv(cfg_guids::hk_skin_vk, DEFAULT_HK_SKIN_VK);
-        m_hk_drag.SetHotkey((uint32_t)dm.get_value(), (uint32_t)dv.get_value());
-        m_hk_vis.SetHotkey((uint32_t)vm.get_value(), (uint32_t)vv.get_value());
-        m_hk_style.SetHotkey((uint32_t)sm.get_value(), (uint32_t)sv.get_value());
-        m_hk_skin.SetHotkey((uint32_t)km.get_value(), (uint32_t)kv.get_value());
-    }
+
+    SetControls(m_loaded);
+    ReloadLocalizedStrings();
 
     m_initialized = true;
     return FALSE;
 }
 
+void CMyPreferences::SetControls(const PrefsState& s)
+{
+    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
+    slider.SetRange(50, 255, TRUE);
+    slider.SetPos(s.opacity);
+    UpdateOpacityLabel(s.opacity);
+
+    Button_SetCheck(GetDlgItem(IDC_AUTO_HIDE), s.auto_hide ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(GetDlgItem(IDC_DEBUG_LOG), s.debug_log ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(GetDlgItem(IDC_ATTACHED_BASELINE), s.attached_baseline ? BST_CHECKED : BST_UNCHECKED);
+
+    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
+    refill_combo(style_combo, (int)FloatingStyle::Count, [](int i) { return tr_style(static_cast<FloatingStyle>(i)); });
+    int style = s.style;
+    if (style < 0 || style >= (int)FloatingStyle::Count) style = DEFAULT_STYLE;
+    style_combo.SetCurSel(style);
+
+    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
+    refill_combo(skin_combo, (int)FloatingSkin::Count, [](int i) { return tr_skin(static_cast<FloatingSkin>(i)); });
+    int skin = s.skin;
+    if (skin < 0 || skin >= (int)FloatingSkin::Count) skin = DEFAULT_SKIN;
+    skin_combo.SetCurSel(skin);
+
+    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
+    refill_combo(mode_combo, (int)FloatingColorMode::Count, [](int i) { return tr_color_mode(static_cast<FloatingColorMode>(i)); });
+    int mode = s.color_mode;
+    if (mode < 0 || mode >= (int)FloatingColorMode::Count) mode = DEFAULT_COLOR_MODE;
+    mode_combo.SetCurSel(mode);
+
+    // Font family: item 0 = follow foobar2000, then every installed face.
+    CComboBox font_combo = GetDlgItem(IDC_FONT_FAMILY);
+    font_combo.ResetContent();
+    font_combo.AddString(tr(L"(Follow foobar2000)", L"(跟随 foobar2000)"));
+    pfc::stringcvt::string_wide_from_utf8 wide(s.font.c_str());
+    const wchar_t* want = wide.is_empty() ? L"" : wide.get_ptr();
+    int font_sel = 0;
+    for (const auto& face : enum_font_faces()) {
+        int idx = font_combo.AddString(face.c_str());
+        if (font_sel == 0 && *want && ::CompareStringOrdinal(face.c_str(), -1, want, -1, TRUE) == CSTR_EQUAL) font_sel = idx;
+    }
+    // Stored face no longer installed: keep it selectable instead of dropping it.
+    if (font_sel == 0 && *want) {
+        int idx = font_combo.AddString(want);
+        if (idx >= 0) font_sel = idx;
+    }
+    font_combo.SetCurSel(font_sel >= 0 ? font_sel : 0);
+
+    CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
+    lang_combo.ResetContent();
+    lang_combo.AddString(L"English");
+    lang_combo.AddString(L"\x4E2D\x6587"); // 中文
+    lang_combo.SetCurSel(s.language == (int)PluginLanguage::Chinese ? 1 : 0);
+
+    m_hk_drag.SetHotkey(s.hk_mod[0], s.hk_vk[0]);
+    m_hk_vis.SetHotkey(s.hk_mod[1], s.hk_vk[1]);
+    m_hk_style.SetHotkey(s.hk_mod[2], s.hk_vk[2]);
+    m_hk_skin.SetHotkey(s.hk_mod[3], s.hk_vk[3]);
+}
+
+PrefsState CMyPreferences::ReadUI()
+{
+    PrefsState s = m_loaded; // fallback for a control with no selection
+
+    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
+    s.opacity = slider.GetPos();
+    s.auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
+    s.debug_log = Button_GetCheck(GetDlgItem(IDC_DEBUG_LOG)) == BST_CHECKED;
+    s.attached_baseline = Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED;
+
+    CComboBox combo = GetDlgItem(IDC_DEFAULT_STYLE);
+    int sel = combo.GetCurSel();
+    if (sel >= 0) s.style = sel;
+    combo = GetDlgItem(IDC_SKIN);
+    sel = combo.GetCurSel();
+    if (sel >= 0) s.skin = sel;
+    combo = GetDlgItem(IDC_COLOR_MODE);
+    sel = combo.GetCurSel();
+    if (sel >= 0) s.color_mode = sel;
+    combo = GetDlgItem(IDC_LANGUAGE);
+    sel = combo.GetCurSel();
+    if (sel >= 0) s.language = sel;
+
+    // Font: item 0 (follow) stores "", anything else stores the face name.
+    CComboBox font_combo = GetDlgItem(IDC_FONT_FAMILY);
+    sel = font_combo.GetCurSel();
+    if (sel == 0) {
+        s.font.clear();
+    } else if (sel > 0) {
+        wchar_t buf[LF_FACESIZE] = {};
+        font_combo.GetLBText(sel, buf);
+        pfc::stringcvt::string_utf8_from_wide utf8(buf);
+        s.font = utf8.get_ptr();
+    }
+
+    s.hk_mod[0] = m_hk_drag.get_mod();  s.hk_vk[0] = m_hk_drag.get_vk();
+    s.hk_mod[1] = m_hk_vis.get_mod();   s.hk_vk[1] = m_hk_vis.get_vk();
+    s.hk_mod[2] = m_hk_style.get_mod(); s.hk_vk[2] = m_hk_style.get_vk();
+    s.hk_mod[3] = m_hk_skin.get_mod();  s.hk_vk[3] = m_hk_skin.get_vk();
+    return s;
+}
+
+// Every interactive control persists right away (live preview), through the
+// same PrefsState writer the Apply button uses.
+void CMyPreferences::Commit()
+{
+    if (!m_initialized) return;
+    ReadUI().apply();
+    OnChanged();
+}
+
 void CMyPreferences::OnDebugLogClicked(UINT, int, CWindow)
 {
+    Commit();
     cfg_var_modern::cfg_bool cfg_debug(cfg_guids::debug_logging, false);
-    cfg_debug = (Button_GetCheck(GetDlgItem(IDC_DEBUG_LOG)) == BST_CHECKED);
     FB2K_console_formatter() << "Floating Clouds: debug logging " << (cfg_debug.get() ? "ON" : "OFF");
 }
 
 void CMyPreferences::OnAttachedBaselineClicked(UINT, int, CWindow)
 {
-    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
-    cfg_attached = (Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED);
+    Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
@@ -312,91 +478,64 @@ void CMyPreferences::OnHScroll(int nCode, int nPos, CScrollBar pScrollBar)
 {
     if (!m_initialized) return;
     CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
-    int pos = slider.GetPos();
-    UpdateOpacityLabel(pos);
-    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
-    cfg_opacity = pos;
+    UpdateOpacityLabel(slider.GetPos());
+    Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::OnAutoHideClicked(UINT, int, CWindow)
 {
-    cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
-    cfg_auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
+    Commit();
 }
 
 void CMyPreferences::OnStyleChanged(UINT, int, CWindow)
 {
-    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    int sel = style_combo.GetCurSel();
-    if (sel < 0) return;
-    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-    cfg_style = sel;
+    Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::OnSkinChanged(UINT, int, CWindow)
 {
-    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    int sel = skin_combo.GetCurSel();
-    if (sel < 0) return;
-    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
-    cfg_skin = sel;
+    Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::OnColorModeChanged(UINT, int, CWindow)
 {
-    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    int sel = mode_combo.GetCurSel();
-    if (sel < 0) return;
-    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
-    cfg_mode = sel;
+    Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::OnLanguageChanged(UINT, int, CWindow)
 {
-    CComboBox lang_combo = GetDlgItem(IDC_LANGUAGE);
-    int sel = lang_combo.GetCurSel();
-    if (sel < 0) return;
-    cfg_var_modern::cfg_int cfg_lang(cfg_guids::language, DEFAULT_LANGUAGE);
-    cfg_lang = sel;
+    Commit();
     ReloadLocalizedStrings(); // re-localize the whole page immediately
+}
+
+void CMyPreferences::OnFontChanged(UINT, int, CWindow)
+{
+    Commit();
+    FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
 void CMyPreferences::ReloadLocalizedStrings()
 {
-    // Style combo items (rebuild, restore selection from config)
+    // Localized-name combos: rebuild the items, keep the current selection.
     CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    style_combo.ResetContent();
-    for (int i = 0; i < (int)FloatingStyle::Count; i++) {
-        style_combo.AddString(tr_style(static_cast<FloatingStyle>(i)));
-    }
-    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-    style_combo.SetCurSel((int)cfg_style.get_value());
-
-    // Skin combo items (rebuild, restore selection from config)
+    refill_combo(style_combo, (int)FloatingStyle::Count, [](int i) { return tr_style(static_cast<FloatingStyle>(i)); });
     CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    skin_combo.ResetContent();
-    for (int i = 0; i < (int)FloatingSkin::Count; i++) {
-        skin_combo.AddString(tr_skin(static_cast<FloatingSkin>(i)));
-    }
-    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
-    int skin_sel = (int)cfg_skin.get_value();
-    if (skin_sel < 0 || skin_sel >= (int)FloatingSkin::Count) skin_sel = DEFAULT_SKIN;
-    skin_combo.SetCurSel(skin_sel);
-
-    // Color mode combo items (rebuild, restore selection from config)
+    refill_combo(skin_combo, (int)FloatingSkin::Count, [](int i) { return tr_skin(static_cast<FloatingSkin>(i)); });
     CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    mode_combo.ResetContent();
-    for (int i = 0; i < (int)FloatingColorMode::Count; i++) {
-        mode_combo.AddString(tr_color_mode(static_cast<FloatingColorMode>(i)));
+    refill_combo(mode_combo, (int)FloatingColorMode::Count, [](int i) { return tr_color_mode(static_cast<FloatingColorMode>(i)); });
+
+    // Font combo item 0 follows the UI language; keep the selected face.
+    CComboBox font_combo = GetDlgItem(IDC_FONT_FAMILY);
+    if (font_combo.GetCount() > 0) {
+        int sel = font_combo.GetCurSel();
+        font_combo.DeleteString(0);
+        font_combo.InsertString(0, tr(L"(Follow foobar2000)", L"(跟随 foobar2000)"));
+        font_combo.SetCurSel(sel);
     }
-    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
-    int mode_sel = (int)cfg_mode.get_value();
-    if (mode_sel < 0 || mode_sel >= (int)FloatingColorMode::Count) mode_sel = DEFAULT_COLOR_MODE;
-    mode_combo.SetCurSel(mode_sel);
 
     SetDlgItemText(IDC_GRP_HOTKEYS, tr(L"Hotkeys", L"热键"));
     SetDlgItemText(IDC_LBL_DRAG, tr(L"Drag mode toggle:", L"拖拽模式切换："));
@@ -413,8 +552,7 @@ void CMyPreferences::ReloadLocalizedStrings()
     SetDlgItemText(IDC_GRP_SKIN, tr(L"Skin", L"皮肤"));
     SetDlgItemText(IDC_LBL_DEFAULT_SKIN, tr(L"Default skin:", L"默认皮肤："));
     SetDlgItemText(IDC_LBL_COLOR_MODE, tr(L"Color mode:", L"深浅模式："));
-    SetDlgItemText(IDC_LBL_FONT_FAMILY, tr(L"Font family (blank = follow foobar2000):", L"字体（留空 = 跟随 foobar2000）："));
-    SetDlgItemText(IDC_GRP_LANGUAGE, tr(L"Language", L"语言"));
+    SetDlgItemText(IDC_LBL_FONT_FAMILY, tr(L"Font family:", L"字体："));
     SetDlgItemText(IDC_LBL_LANGUAGE, tr(L"UI Language:", L"界面语言："));
 }
 
@@ -424,35 +562,7 @@ LRESULT CMyPreferences::OnHotkeyCaptured(UINT, WPARAM wParam, LPARAM lParam, BOO
     uint32_t vk = LOWORD(wParam);
     int ctrl_id = (int)lParam;
 
-    const GUID* g_mod = nullptr;
-    const GUID* g_vk = nullptr;
-    uint32_t d_mod = 0, d_vk = 0;
-    switch (ctrl_id) {
-        case IDC_HOTKEY_DRAG:
-            g_mod = &cfg_guids::hk_drag_mod; g_vk = &cfg_guids::hk_drag_vk;
-            d_mod = DEFAULT_HK_DRAG_MOD; d_vk = DEFAULT_HK_DRAG_VK;
-            break;
-        case IDC_HOTKEY_VISIBILITY:
-            g_mod = &cfg_guids::hk_vis_mod; g_vk = &cfg_guids::hk_vis_vk;
-            d_mod = DEFAULT_HK_VIS_MOD; d_vk = DEFAULT_HK_VIS_VK;
-            break;
-        case IDC_HOTKEY_STYLE:
-            g_mod = &cfg_guids::hk_style_mod; g_vk = &cfg_guids::hk_style_vk;
-            d_mod = DEFAULT_HK_STYLE_MOD; d_vk = DEFAULT_HK_STYLE_VK;
-            break;
-        case IDC_HOTKEY_SKIN:
-            g_mod = &cfg_guids::hk_skin_mod; g_vk = &cfg_guids::hk_skin_vk;
-            d_mod = DEFAULT_HK_SKIN_MOD; d_vk = DEFAULT_HK_SKIN_VK;
-            break;
-        default:
-            return 0;
-    }
-
-    // Persist and apply immediately.
-    cfg_var_modern::cfg_int cm(*g_mod, d_mod);
-    cfg_var_modern::cfg_int cv(*g_vk, d_vk);
-    cm = (int64_t)mod;
-    cv = (int64_t)vk;
+    Commit(); // the captured boxes hold the new values
 
     FB2K_console_formatter() << "Floating Clouds: hotkey " << ctrl_id << " set mod=0x" << pfc::format_hex(mod) << " vk=" << vk;
     FloatingCloudsWindow::reload_hotkeys();
@@ -468,40 +578,8 @@ void CMyPreferences::UpdateOpacityLabel(int opacity)
 
 bool CMyPreferences::HasChanged()
 {
-    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
-    cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
-    cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-    cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
-    cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
-    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
-
-    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
-    int opacity = slider.GetPos();
-
-    bool auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
-    bool attached = Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED;
-    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    int style = style_combo.GetCurSel();
-    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    int skin = skin_combo.GetCurSel();
-    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    int mode = mode_combo.GetCurSel();
-    cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
-    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
-    wchar_t font_buf[256] = {};
-    font_edit.GetWindowText(font_buf, 256);
-    pfc::stringcvt::string_utf8_from_wide font_utf8(font_buf);
-    const char* cur_font = cfg_font.get();
-    if (!cur_font) cur_font = "";
-    bool font_changed = (strcmp(cur_font, font_utf8.get_ptr()) != 0);
-
-    return opacity != (int)cfg_opacity.get_value() ||
-           auto_hide != cfg_auto_hide.get() ||
-           attached != cfg_attached.get() ||
-           (style >= 0 && style != (int)cfg_style.get_value()) ||
-           (skin >= 0 && skin != (int)cfg_skin.get_value()) ||
-           (mode >= 0 && mode != (int)cfg_mode.get_value()) ||
-           font_changed;
+    if (!m_initialized) return false;
+    return !ReadUI().equals(m_loaded);
 }
 
 void CMyPreferences::OnChanged()
@@ -511,48 +589,9 @@ void CMyPreferences::OnChanged()
 
 void CMyPreferences::apply()
 {
-    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
-    int opacity = slider.GetPos();
-    cfg_var_modern::cfg_int cfg_opacity(cfg_guids::opacity, DEFAULT_OPACITY);
-    cfg_opacity = opacity;
-
-    bool auto_hide = Button_GetCheck(GetDlgItem(IDC_AUTO_HIDE)) == BST_CHECKED;
-    cfg_var_modern::cfg_bool cfg_auto_hide(cfg_guids::auto_hide, DEFAULT_AUTO_HIDE);
-    cfg_auto_hide = auto_hide;
-
-    bool attached = Button_GetCheck(GetDlgItem(IDC_ATTACHED_BASELINE)) == BST_CHECKED;
-    cfg_var_modern::cfg_bool cfg_attached(cfg_guids::vis_art_attached_baseline, false);
-    cfg_attached = attached;
-
-    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    int style = style_combo.GetCurSel();
-    if (style >= 0) {
-        cfg_var_modern::cfg_int cfg_style(cfg_guids::current_style, DEFAULT_STYLE);
-        cfg_style = style;
-    }
-
-    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    int skin = skin_combo.GetCurSel();
-    if (skin >= 0) {
-        cfg_var_modern::cfg_int cfg_skin(cfg_guids::current_skin, DEFAULT_SKIN);
-        cfg_skin = skin;
-    }
-
-    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    int mode = mode_combo.GetCurSel();
-    if (mode >= 0) {
-        cfg_var_modern::cfg_int cfg_mode(cfg_guids::color_mode, DEFAULT_COLOR_MODE);
-        cfg_mode = mode;
-    }
-
-    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
-    wchar_t font_buf[256] = {};
-    font_edit.GetWindowText(font_buf, 256);
-    {
-        cfg_var_modern::cfg_string cfg_font(cfg_guids::font_family, "");
-        pfc::stringcvt::string_utf8_from_wide font_utf8(font_buf);
-        cfg_font = font_utf8.get_ptr();
-    }
+    PrefsState ui = ReadUI();
+    ui.apply();
+    m_loaded = ui; // the page is clean now
 
     FloatingCloudsWindow::apply_preferences();
     OnChanged();
@@ -560,45 +599,25 @@ void CMyPreferences::apply()
 
 void CMyPreferences::reset()
 {
-    CTrackBarCtrl slider = GetDlgItem(IDC_OPACITY);
-    slider.SetPos(DEFAULT_OPACITY);
-    UpdateOpacityLabel(DEFAULT_OPACITY);
-
-    Button_SetCheck(GetDlgItem(IDC_AUTO_HIDE), DEFAULT_AUTO_HIDE ? BST_CHECKED : BST_UNCHECKED);
-    Button_SetCheck(GetDlgItem(IDC_ATTACHED_BASELINE), BST_UNCHECKED);
-
-    CComboBox style_combo = GetDlgItem(IDC_DEFAULT_STYLE);
-    style_combo.SetCurSel(DEFAULT_STYLE);
-
-    CComboBox skin_combo = GetDlgItem(IDC_SKIN);
-    skin_combo.SetCurSel(DEFAULT_SKIN);
-
-    CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    mode_combo.SetCurSel(DEFAULT_COLOR_MODE);
-
-    CEdit font_edit = GetDlgItem(IDC_FONT_FAMILY);
-    font_edit.SetWindowText(L"");
-
-    // Hotkeys -> defaults + re-register
-    {
-        cfg_var_modern::cfg_int dm(cfg_guids::hk_drag_mod, DEFAULT_HK_DRAG_MOD);
-        cfg_var_modern::cfg_int dv(cfg_guids::hk_drag_vk, DEFAULT_HK_DRAG_VK);
-        cfg_var_modern::cfg_int vm(cfg_guids::hk_vis_mod, DEFAULT_HK_VIS_MOD);
-        cfg_var_modern::cfg_int vv(cfg_guids::hk_vis_vk, DEFAULT_HK_VIS_VK);
-        cfg_var_modern::cfg_int sm(cfg_guids::hk_style_mod, DEFAULT_HK_STYLE_MOD);
-        cfg_var_modern::cfg_int sv(cfg_guids::hk_style_vk, DEFAULT_HK_STYLE_VK);
-        cfg_var_modern::cfg_int km(cfg_guids::hk_skin_mod, DEFAULT_HK_SKIN_MOD);
-        cfg_var_modern::cfg_int kv(cfg_guids::hk_skin_vk, DEFAULT_HK_SKIN_VK);
-        dm = DEFAULT_HK_DRAG_MOD; dv = DEFAULT_HK_DRAG_VK;
-        vm = DEFAULT_HK_VIS_MOD; vv = DEFAULT_HK_VIS_VK;
-        sm = DEFAULT_HK_STYLE_MOD; sv = DEFAULT_HK_STYLE_VK;
-        km = DEFAULT_HK_SKIN_MOD; kv = DEFAULT_HK_SKIN_VK;
-        m_hk_drag.SetHotkey(DEFAULT_HK_DRAG_MOD, DEFAULT_HK_DRAG_VK);
-        m_hk_vis.SetHotkey(DEFAULT_HK_VIS_MOD, DEFAULT_HK_VIS_VK);
-        m_hk_style.SetHotkey(DEFAULT_HK_STYLE_MOD, DEFAULT_HK_STYLE_VK);
-        m_hk_skin.SetHotkey(DEFAULT_HK_SKIN_MOD, DEFAULT_HK_SKIN_VK);
-        FloatingCloudsWindow::reload_hotkeys();
+    // Language and debug logging keep their current settings (they are written
+    // the moment they change), exactly as before.
+    PrefsState defaults = ReadUI();
+    defaults.opacity = DEFAULT_OPACITY;
+    defaults.auto_hide = DEFAULT_AUTO_HIDE;
+    defaults.attached_baseline = false;
+    defaults.style = DEFAULT_STYLE;
+    defaults.skin = DEFAULT_SKIN;
+    defaults.color_mode = DEFAULT_COLOR_MODE;
+    defaults.font.clear();
+    for (int i = 0; i < 4; i++) {
+        defaults.hk_mod[i] = k_hk_mod_defaults[i];
+        defaults.hk_vk[i] = k_hk_vk_defaults[i];
     }
+    SetControls(defaults);
+
+    // Hotkeys have to take effect right away; all other keys wait for Apply.
+    write_hotkeys(defaults);
+    FloatingCloudsWindow::reload_hotkeys();
 
     FloatingCloudsWindow::apply_preferences();
     OnChanged();
