@@ -29,3 +29,7 @@ Win32/
 ipch/
 .vs
 logs/
+
+# Preview renderer build output (tools/preview)
+tools/preview/preview.exe
+tools/preview/*.obj
