@@ -32,7 +32,9 @@ struct AppleAlbum {
     int track_count = 0;         // album-level trackCount
     int disc_count = 0;          // album-level discCount (max of track discCount)
     pfc::string8 copyright;      // album-level "copyright" notice
-    int album_id = 0;
+    // Apple album IDs are 64-bit: recent IDs are 10 digits and no longer fit in
+    // a 32-bit int (atoi() silently truncated them, which broke every lookup).
+    int64_t album_id = 0;
     pfc::string8 region;         // storefront code actually used (e.g. "hk" after CN fallback)
     bool not_available = false;    // storefront responded but has no such album
     bool t2s_applied = false;      // Traditional->Simplified was applied (char-by-char)
@@ -42,11 +44,11 @@ struct AppleAlbum {
 // Parse `https://music.apple.com/{region}/album/{slug}/{albumID}` (or a bare
 // numeric ID). Returns true when an album ID was found; fills out_region
 // (storefront code, may stay empty for a bare ID) and out_album_id.
-bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_album_id);
+bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int64_t& out_album_id);
 
 // Fetch album + track metadata from the iTunes Lookup API.
 // WORKER THREAD ONLY (uses abort_callback; may throw on network/HTTP failure).
-void fetch_album(int album_id, const char* region, abort_callback& abort, AppleAlbum& out);
+void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out);
 
 // Convert one UTF-8 string from Traditional Chinese to Simplified Chinese
 // (char-by-char via the Windows NLS mapping). Idempotent: already-Simplified
@@ -63,4 +65,4 @@ bool has_traditional(const AppleAlbum& a);
 // High-level fetch: fetch `region`; if it is CN and the album is unavailable there,
 // retry the HK storefront and convert its Traditional Chinese tags to Simplified.
 // Throws on network/HTTP failure (like fetch_album).
-void fetch_album_auto(int album_id, const char* region, abort_callback& abort, AppleAlbum& out);
+void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out);

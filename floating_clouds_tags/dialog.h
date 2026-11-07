@@ -39,7 +39,7 @@ private:
     void ReloadStrings();
     void PrefillFromClipboard();
     void UpdatePreview();
-    bool FetchNow(int album_id, int region_index, AppleAlbum& out, pfc::string8& err);
+    bool FetchNow(int64_t album_id, int region_index, AppleAlbum& out, pfc::string8& err);
     void ApplyEnabled(bool enabled);
 
     metadb_handle_list m_selected;

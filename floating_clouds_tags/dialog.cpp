@@ -115,7 +115,7 @@ void TagsDialog::PrefillFromClipboard()
             std::wstring w(p, len);
             SetDlgItemTextW(IDC_URL, w.c_str());
             pfc::string8 region;
-            int album_id = 0;
+            int64_t album_id = 0;
             if (parse_album_url(w.c_str(), region, album_id) && !region.is_empty()) {
                 int idx = region_index_by_code(region.get_ptr());
                 if (idx >= 0) {
@@ -130,7 +130,7 @@ void TagsDialog::PrefillFromClipboard()
     ::CloseClipboard();
 }
 
-bool TagsDialog::FetchNow(int album_id, int region_index, AppleAlbum& out, pfc::string8& err)
+bool TagsDialog::FetchNow(int64_t album_id, int region_index, AppleAlbum& out, pfc::string8& err)
 {
     const char* code = kRegions[region_index].code;
     pfc::string8 fetch_error;
@@ -170,7 +170,7 @@ void TagsDialog::OnFetch(UINT, int, CWindow)
     }
 
     pfc::string8 region;
-    int album_id = 0;
+    int64_t album_id = 0;
     if (!parse_album_url(w.c_str(), region, album_id)) {
         popup_message::g_show(
             tr8("Enter a valid Apple Music album link or numeric album ID.",

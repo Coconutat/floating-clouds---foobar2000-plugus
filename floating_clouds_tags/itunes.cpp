@@ -12,7 +12,7 @@ namespace {
 // Extract the longest contiguous run of digits in `s` — for Apple Music URLs
 // that is the album ID (the trailing numeric path segment). Used as a fallback
 // when the canonical URL structure could not be parsed.
-bool extract_trailing_id(const char* s, int& out_id)
+bool extract_trailing_id(const char* s, int64_t& out_id)
 {
     const char* best_start = nullptr;
     t_size best_len = 0;
@@ -30,13 +30,26 @@ bool extract_trailing_id(const char* s, int& out_id)
     if (!best_start || best_len < 5) return false; // album IDs are >= 5 digits
     pfc::string8 idstr;
     idstr.set_string(best_start, best_len);
-    out_id = atoi(idstr.get_ptr());
+    out_id = strtoll(idstr.get_ptr(), nullptr, 10); // 64-bit: IDs exceed INT_MAX
     return out_id > 0;
 }
 
 } // namespace
 
 namespace {
+
+// Printable preview of the first bytes of a response body, for console
+// diagnostics (keeps a binary/gzip body readable instead of dumping junk).
+pfc::string8 printable_head(const pfc::string8& body, t_size max = 160)
+{
+    pfc::string8 out;
+    const t_size n = (std::min)(body.length(), max);
+    for (t_size i = 0; i < n; i++) {
+        const unsigned char c = (unsigned char)body[i];
+        out.add_byte((c >= 0x20 && c < 0x7F) ? (char)c : '.');
+    }
+    return out;
+}
 
 // Index of a storefront by its iTunes country code (DEFAULT_REGION if unknown).
 int region_index_for_code(const char* code)
@@ -100,7 +113,7 @@ void apply_locale_preference(const char* url, pfc::string8& region)
 
 } // namespace
 
-bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_album_id)
+bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int64_t& out_album_id)
 {
     out_region.reset();
     out_album_id = 0;
@@ -127,7 +140,7 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_albu
                     if (id_end != id_start) {
                         pfc::string8 idstr;
                         idstr.set_string(id_start, (t_size)(id_end - id_start));
-                        out_album_id = atoi(idstr.get_ptr());
+                        out_album_id = strtoll(idstr.get_ptr(), nullptr, 10);
                         if (out_album_id > 0) {
                             apply_locale_preference(s, out_region);
                             return true;
@@ -152,7 +165,7 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_albu
     if (all_digits) {
         pfc::string8 idstr;
         idstr.set_string(t.get_ptr() + b, (t_size)(e - b));
-        out_album_id = atoi(idstr.get_ptr());
+        out_album_id = strtoll(idstr.get_ptr(), nullptr, 10);
         return out_album_id > 0;
     }
 
@@ -162,15 +175,19 @@ bool parse_album_url(const wchar_t* url, pfc::string8& out_region, int& out_albu
     return true;
 }
 
-void fetch_album(int album_id, const char* region, abort_callback& abort, AppleAlbum& out)
+void fetch_album(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out)
 {
     out = AppleAlbum();
 
     pfc::string_formatter url;
-    url << "https://itunes.apple.com/lookup?id=" << album_id
+    url << "https://itunes.apple.com/lookup?id=" << (long long)album_id
         << "&entity=song&country=" << region << "&limit=200";
 
     service_ptr_t<http_request> req = http_client::get()->create_request("GET");
+    // Apple gzips when asked; the host's decompression support is not something a
+    // component can rely on, so ask for plain bytes. (If the body still comes back
+    // binary, parse_failed_below logs the first bytes so it is diagnosable.)
+    req->add_header("Accept-Encoding", "identity");
     file::ptr f = req->run(url, abort); // throws on network failure / non-2xx
 
     pfc::string8 body;
@@ -181,8 +198,13 @@ void fetch_album(int album_id, const char* region, abort_callback& abort, AppleA
         body.add_string(chunk, rd);
     }
 
+    // Diagnostics: a silent parse/no-collection failure here looks exactly like
+    // "album not available" in the dialog, which is not actionable.
+    FB2K_console_formatter() << "Apple Music Tags: GET " << url.get_ptr() << " -> " << body.length() << " bytes";
+
     json::Value root;
     if (!json::parse(body.get_ptr(), body.length(), root)) {
+        FB2K_console_formatter() << "Apple Music Tags: JSON parse failed, head=" << printable_head(body);
         out.error = "Failed to parse the Apple Music response.";
         return;
     }
@@ -234,10 +256,13 @@ void fetch_album(int album_id, const char* region, abort_callback& abort, AppleA
     }
 
     if (!found_album) {
+        FB2K_console_formatter() << "Apple Music Tags: " << region << " has no collection (tracks="
+            << (int)out.tracks.get_size() << ")";
         out.not_available = true;
         out.error = "This album is not available on the selected storefront (region).";
         return;
     }
+    FB2K_console_formatter() << "Apple Music Tags: " << region << " ok, tracks=" << (int)out.tracks.get_size();
     out.ok = true;
 }
 
@@ -303,7 +328,7 @@ bool has_traditional(const AppleAlbum& a)
     return false;
 }
 
-void fetch_album_auto(int album_id, const char* region, abort_callback& abort, AppleAlbum& out)
+void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out)
 {
     // The lookup API answers from exactly one storefront, and that storefront may
     // know an album only as metadata without its track rows, or not know it at
@@ -343,7 +368,12 @@ void fetch_album_auto(int album_id, const char* region, abort_callback& abort, A
             if (!have_error) { first_error = e.what(); have_error = true; }
             continue;
         }
-        if (!candidate.ok) continue;
+        if (!candidate.ok) {
+            // Keep the first concrete reason (parse failure etc.) for the dialog:
+            // "not found anywhere" alone hides a broken HTTP response.
+            if (!have_error && !candidate.error.is_empty()) { first_error = candidate.error; have_error = true; }
+            continue;
+        }
         if (candidate.tracks.get_size() > 0) { out = candidate; break; }
         if (!have_album_only) { album_only = candidate; have_album_only = true; }
     }
@@ -353,7 +383,7 @@ void fetch_album_auto(int album_id, const char* region, abort_callback& abort, A
             out.not_available = true;
             out.error = "This album was not found in any Apple Music storefront.";
             if (have_error) {
-                out.error = pfc::string_formatter() << out.error << " Last network error: " << first_error;
+                out.error = pfc::string_formatter() << out.error << " Last error: " << first_error;
             }
             return;
         }
