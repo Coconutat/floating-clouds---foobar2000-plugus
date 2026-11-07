@@ -23,10 +23,11 @@ constexpr bool    DEFAULT_OVERWRITE = false;
 // The storefront decides which catalog (and therefore which metadata language)
 // the lookup API reads, so this table doubles as the metadata-language switch.
 struct RegionInfo {
-    const char* code;        // iTunes country param / URL region segment
+    const char* code;        // iTunes country param / URL region segment ("" = scan mode)
     const char* lang;        // metadata language family: zh-Hans, zh-Hant, en, ja, ko
     const wchar_t* label;    // English UI
     const wchar_t* label_zh; // Chinese UI
+    bool scan_all = false;   // true = query every storefront and keep the most Chinese one
 };
 
 // Append new storefronts at the END: cfg_guids::default_region stores an index
@@ -40,6 +41,11 @@ inline const RegionInfo kRegions[] = {
     { "gb", "en",      L"GB (English)",    L"GB（English）" },
     { "kr", "ko",      L"KR (한국어)",     L"KR（한국어）" },
     { "sg", "en",      L"SG (English)",    L"SG（English）" },
+    { "my", "en",      L"MY (English)",    L"MY（English）" },
+    // Not a storefront: queries all of them in parallel and keeps the answer with
+    // the most Chinese text, so Chinese metadata is found no matter which region
+    // actually carries it (see itunes.cpp scan_storefronts).
+    { "",   "zh-Hans", L"CN auto: scan regions for Chinese", L"CN 自动：多地区扫描中文", true },
 };
 constexpr int32_t kRegionCount = (int32_t)(sizeof(kRegions) / sizeof(kRegions[0]));
 

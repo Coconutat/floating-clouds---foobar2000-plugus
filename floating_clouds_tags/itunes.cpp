@@ -2,6 +2,8 @@
 #include "itunes.h"
 #include "config.h"
 #include <SDK/http_client.h> // http_client / http_request / file::ptr
+#include <future>            // std::async for the parallel storefront scan
+#include <mutex>             // ordering of the finished scans
 
 // ============================================================================
 // Apple Music / iTunes Lookup API client implementation
@@ -328,6 +330,138 @@ bool has_traditional(const AppleAlbum& a)
     return false;
 }
 
+namespace {
+
+// Number of CJK ideographs in a UTF-8 string. This is the measure of "this
+// storefront actually returned Chinese metadata": romanised answers (Jane Zhang /
+// Caisheng Bo) score 0 even though the album title may be Chinese.
+unsigned count_cjk(const char* utf8)
+{
+    if (!utf8) return 0;
+    unsigned n = 0;
+    const unsigned char* p = (const unsigned char*)utf8;
+    while (*p) {
+        unsigned cp = 0;
+        int extra = 0;
+        if (*p < 0x80) { p++; continue; }
+        if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1F; extra = 1; }
+        else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0F; extra = 2; }
+        else if ((*p & 0xF8) == 0xF0) { cp = *p & 0x07; extra = 3; }
+        else { p++; continue; }
+        p++;
+        bool valid = true;
+        for (int i = 0; i < extra; i++, p++) {
+            if ((*p & 0xC0) != 0x80) { valid = false; break; }
+            cp = (cp << 6) | (*p & 0x3F);
+        }
+        if (!valid) continue;
+        if (cp >= 0x4E00 && cp <= 0x9FFF) n++;
+    }
+    return n;
+}
+
+unsigned album_cjk(const AppleAlbum& a)
+{
+    unsigned n = count_cjk(a.album_name.get_ptr());
+    n += count_cjk(a.album_artist.get_ptr());
+    for (t_size i = 0; i < a.tracks.get_size(); i++) {
+        n += count_cjk(a.tracks[i].title.get_ptr());
+        n += count_cjk(a.tracks[i].artist.get_ptr());
+    }
+    return n;
+}
+
+bool is_zh_hans(const RegionInfo& r) { return strcmp(r.lang, "zh-Hans") == 0; }
+
+// Auto mode ("CN auto: scan regions for Chinese"): ask every storefront at once
+// and keep the answer with the most Chinese text. Parallel because one lookup
+// takes ~1s and there are ten storefronts; done sequentially the dialog would
+// sit there for ten seconds.
+// Ranking: an answer with track rows beats album-only, then more Chinese wins,
+// then a Simplified storefront beats a Traditional one, and only then does
+// whichever finished first win. Pure arrival order would happily pick SG/US,
+// which carry a Chinese album title but a romanised artist name.
+void scan_storefronts(int64_t album_id, abort_callback& abort, AppleAlbum& out)
+{
+    std::vector<AppleAlbum> albums(kRegionCount);
+    std::vector<unsigned> cjk(kRegionCount, 0);
+    std::vector<unsigned> order(kRegionCount, 0);
+    std::mutex order_guard;
+    unsigned finished = 0;
+
+    std::vector<std::future<void>> jobs;
+    for (int i = 0; i < kRegionCount; i++) {
+        if (!kRegions[i].code[0] || kRegions[i].scan_all) continue; // skip the auto row
+        jobs.push_back(std::async(std::launch::async, [&, i]() {
+            try {
+                fetch_album(album_id, kRegions[i].code, abort, albums[(size_t)i]);
+            } catch (...) {
+                // One slow or failing storefront must not fail the whole scan.
+            }
+            std::lock_guard<std::mutex> lock(order_guard);
+            order[(size_t)i] = finished++;
+        }));
+    }
+    for (auto& job : jobs) job.wait();
+
+    if (abort.is_aborting()) throw exception_aborted();
+
+    for (int i = 0; i < kRegionCount; i++) cjk[(size_t)i] = albums[(size_t)i].ok ? album_cjk(albums[(size_t)i]) : 0;
+
+    auto better = [&](int a, int b) {
+        const bool tracks_a = albums[(size_t)a].tracks.get_size() > 0;
+        const bool tracks_b = albums[(size_t)b].tracks.get_size() > 0;
+        if (tracks_a != tracks_b) return tracks_a;
+        if (cjk[(size_t)a] != cjk[(size_t)b]) return cjk[(size_t)a] > cjk[(size_t)b];
+        if (is_zh_hans(kRegions[a]) != is_zh_hans(kRegions[b])) return is_zh_hans(kRegions[a]);
+        return order[(size_t)a] < order[(size_t)b];
+    };
+
+    int best = -1;
+    for (int i = 0; i < kRegionCount; i++) {
+        if (!albums[(size_t)i].ok || kRegions[i].scan_all) continue;
+        if (cjk[(size_t)i] == 0) continue; // auto mode is looking for Chinese
+        if (best < 0 || better(i, best)) best = i;
+    }
+
+    if (best < 0) {
+        // Nothing Chinese anywhere: do not fail, fall back to the usual language
+        // order so the user still gets usable (English) metadata.
+        for (int i = 0; i < kRegionCount; i++) {
+            if (!albums[(size_t)i].ok) continue;
+            const bool tracks = albums[(size_t)i].tracks.get_size() > 0;
+            if (best < 0 || (tracks && albums[(size_t)best].tracks.get_size() == 0)) best = i;
+        }
+        if (best < 0) {
+            out.not_available = true;
+            out.error = "This album was not found in any Apple Music storefront.";
+            return;
+        }
+    }
+
+    out = albums[(size_t)best];
+
+    // Prefer the official Simplified album-level text when the winner has track
+    // rows from a Traditional storefront: CN often lists an album as a collection
+    // without tracks, and that text is Apple's own Simplified localisation.
+    for (int i = 0; i < kRegionCount; i++) {
+        if (i == best || !albums[(size_t)i].ok || !is_zh_hans(kRegions[i])) continue;
+        if (cjk[(size_t)i] == 0 || albums[(size_t)i].tracks.get_size() > 0) continue;
+        if (albums[(size_t)i].track_count != 0 && albums[(size_t)i].track_count != out.track_count) continue;
+        out.album_name = albums[(size_t)i].album_name;
+        out.album_artist = albums[(size_t)i].album_artist;
+        out.genre = albums[(size_t)i].genre;
+        if (!albums[(size_t)i].copyright.is_empty()) out.copyright = albums[(size_t)i].copyright;
+        if (!albums[(size_t)i].release_date.is_empty()) out.release_date = albums[(size_t)i].release_date;
+        break;
+    }
+
+    FB2K_console_formatter() << "Apple Music Tags: auto scan picked " << out.region
+        << " (chinese chars=" << cjk[(size_t)best] << ", tracks=" << (int)out.tracks.get_size() << ")";
+}
+
+} // namespace
+
 void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abort, AppleAlbum& out)
 {
     // The lookup API answers from exactly one storefront, and that storefront may
@@ -337,6 +471,17 @@ void fetch_album_auto(int64_t album_id, const char* region, abort_callback& abor
     // fits the selection, and stop at the first complete answer.
     const int selected_index = region_index_for_code(region);
     const RegionInfo& selected = kRegions[selected_index];
+
+    // Auto mode: no single storefront is trusted, scan them all and keep the
+    // answer that actually carries Chinese text.
+    if (selected.scan_all) {
+        scan_storefronts(album_id, abort, out);
+        if (out.ok && pfc::stricmp_ascii(selected.lang, "zh-Hans") == 0 && has_traditional(out)) {
+            to_simplified(out);
+            out.t2s_applied = true;
+        }
+        return;
+    }
 
     int order[kRegionCount];
     for (int i = 0; i < kRegionCount; i++) order[i] = i;
