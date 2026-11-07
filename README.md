@@ -23,7 +23,7 @@ This repository contains three independent foobar2000 components:
 - 7 styles: Minimal, Full, Album Focus, Progress Ring, Visualizer, Lyrics Line, Visualizer + Cover
 - 2 skins: Material 3 (MD3) and Apple liquid glass, each with dark and light palettes
 - Color mode: follows foobar2000 by default, or you can force dark or light
-- Font family: follows foobar2000's default UI font, or you can set a custom family in Preferences
+- Font family: follows foobar2000's default UI font, or pick any installed family from the dropdown in Preferences
 - Per-pixel alpha rendering: UpdateLayeredWindow path (driver agnostic, avoids AMD DirectComposition flicker) with a uniform alpha fallback
 - Smooth 60fps animation: frame rate independent easing for progress, fades, button state layers, and show/hide
 - Customizable global hotkeys: drag mode, show/hide, cycle styles, cycle skins
@@ -78,7 +78,7 @@ This repository contains three independent foobar2000 components:
 | MD3 | Material 3 surface card with rounded corners and an elevation shadow. Uses the baseline dark scheme by default and the light scheme when light mode is active. |
 | Apple | Liquid glass style: a frosted translucent card with a gradient rim and a two-layer shadow. Uses system blue accents, and the visualizer wave and progress line share a blue-to-pink gradient. |
 
-Both skins ship dark and light palettes. Color mode follows foobar2000 by default; you can force dark or light in Preferences. The font family follows foobar2000's default UI font, or you can type a custom family in Preferences.
+Both skins ship dark and light palettes. Color mode follows foobar2000 by default; you can force dark or light in Preferences. The font family follows foobar2000's default UI font, or pick any installed family from the dropdown in Preferences ("(Follow foobar2000)" is the first entry).
 
 ## Requirements
 
