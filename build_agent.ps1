@@ -20,7 +20,12 @@
     Debug/Release, x64/Win32.
 
 .PARAMETER VsInstallDir
-    Visual Studio installation directory (default: D:\APPS\Visual Studio).
+    Visual Studio installation directory. Empty = auto-detect (vswhere), with
+    'D:\APPS\Visual Studio' as the last-resort fallback.
+
+.PARAMETER PlatformToolset
+    MSBuild PlatformToolset override (e.g. v142, v143, v145). Empty = pick the
+    project's native v142 when installed, otherwise the newest installed one.
 
 .PARAMETER Package
     Zip the built DLL into dist\<name>.fb2k-component.
@@ -44,7 +49,9 @@ param(
     [ValidateSet('x64', 'Win32')]
     [string] $Platform = 'x64',
 
-    [string] $VsInstallDir = 'D:\APPS\Visual Studio',
+    [string] $VsInstallDir = '',
+
+    [string] $PlatformToolset = '',
 
     [switch] $Package,
 
@@ -58,6 +65,39 @@ Set-StrictMode -Version Latest
 
 $WorkspaceRoot = (Resolve-Path $PSScriptRoot).Path
 Set-Location $WorkspaceRoot
+
+# ---------------------------------------------------------------------------
+# Toolchain detection
+# ---------------------------------------------------------------------------
+function Get-InstalledPlatformToolset {
+    param([string] $VsDir)
+
+    # PlatformToolsets live under MSBuild\Microsoft\VC\<vcDir>\Platforms\x64\PlatformToolsets
+    $vcRoot = Join-Path $VsDir 'MSBuild\Microsoft\VC'
+    $vcDirs = @(Get-ChildItem -LiteralPath $vcRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^v\d+$' } | Sort-Object Name -Descending)
+    foreach ($vc in $vcDirs) {
+        $ptDir = Join-Path $vc.FullName 'Platforms\x64\PlatformToolsets'
+        if (-not (Test-Path -LiteralPath $ptDir)) { continue }
+        $toolsets = @(Get-ChildItem -LiteralPath $ptDir -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Name } | Sort-Object)
+        if ($toolsets -contains 'v142') { return 'v142' }
+        if ($toolsets.Count -gt 0) { return $toolsets[-1] }
+    }
+    return ''
+}
+
+if (-not $VsInstallDir) {
+    $pf86 = ${env:ProgramFiles(x86)}
+    if (-not $pf86) { $pf86 = $env:ProgramFiles }
+    $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $VsInstallDir = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+    }
+    if (-not $VsInstallDir) { $VsInstallDir = 'D:\APPS\Visual Studio' }
+}
+
+if (-not $PlatformToolset) { $PlatformToolset = Get-InstalledPlatformToolset -VsDir $VsInstallDir }
 
 # ---------------------------------------------------------------------------
 # Toolchain
@@ -140,8 +180,10 @@ function Invoke-BuildComponent {
     # references occasionally fail with "0 errors" (MSBuild task in
     # ResolveProjectReferences fails silently), which is useless for debugging.
     # Sequential builds are deterministic and still fast enough here.
-    $msbuildArgs = '"{0}" /p:Configuration={1} /p:Platform={2} /p:VisualStudioVersion=17.0 /v:normal /nologo' `
+    $msbuildArgs = '"{0}" /p:Configuration={1} /p:Platform={2}' `
         -f $Comp.Project, $Configuration, $Platform
+    if ($PlatformToolset) { $msbuildArgs += ' /p:PlatformToolset=' + $PlatformToolset }
+    $msbuildArgs += ' /v:normal /nologo'
     $content = '@echo off' + "`r`n" +
         'call "{0}" {1}' -f $vcvars, $arch + "`r`n" +
         'if errorlevel 1 exit /b %errorlevel%' + "`r`n" +
@@ -209,6 +251,7 @@ Write-Host '== Floating Clouds agent build ==' -ForegroundColor Cyan
 Write-Host ('  Component : {0}' -f $Component)
 Write-Host ('  Config    : {0} / {1}' -f $Configuration, $Platform)
 Write-Host ('  VS        : {0}' -f $VsInstallDir)
+Write-Host ('  Toolset   : {0}' -f $PlatformToolset)
 Write-Host ''
 
 $failed = @()
