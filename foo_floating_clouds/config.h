@@ -60,9 +60,10 @@ enum class FloatingStyle : int32_t {
 
 // Visual skin (material system), orthogonal to FloatingStyle (layout).
 enum class FloatingSkin : int32_t {
-    MD3 = 0,      // current Material 3 dark look (default)
-    Mist = 1,     // Mist: near-opaque frosted panel, cool neutral, squircle
-    Count = 2
+    MD3 = 0,         // Material 3 tonal surface card (default)
+    Mist = 1,        // near-opaque frosted panel, cool neutral, squircle
+    LiquidGlass = 2, // captured + lensed backdrop: live refraction at the rim
+    Count = 3
 };
 
 // Color mode: whether the skin uses its dark or light token set.

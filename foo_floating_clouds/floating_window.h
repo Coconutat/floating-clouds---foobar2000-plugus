@@ -45,6 +45,7 @@ public:
         MSG_WM_PAINT(OnPaint)
         MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_MOVE(OnMove)
         MSG_WM_NCHITTEST(OnNcHitTest)
         MSG_WM_LBUTTONDOWN(OnLButtonDown)
         MSG_WM_LBUTTONUP(OnLButtonUp)
@@ -161,6 +162,9 @@ private:
     bool render_now();
     BOOL OnEraseBkgnd(CDCHandle dc);
     void OnSize(UINT nType, CSize size);
+    // The Liquid Glass material is anchored to the desktop, so a moved window
+    // needs a fresh backdrop capture (otherwise the glass drags stale pixels).
+    void OnMove(CPoint pt);
     LRESULT OnNcHitTest(CPoint point);
     void OnLButtonDown(UINT nFlags, CPoint point);
     void OnLButtonUp(UINT nFlags, CPoint point);

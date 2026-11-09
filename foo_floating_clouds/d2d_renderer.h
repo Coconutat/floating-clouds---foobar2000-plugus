@@ -4,7 +4,9 @@
 #include <string>
 #include "config.h"
 #include "skin_theme.h"
+#include "backdrop.h"
 #include "styles/glass_card.h"
+#include "styles/glass_lens.h"
 #include "styles/icons.h"
 #include "dynamic_color.h"
 
@@ -63,12 +65,26 @@ public:
     uint32_t album_seed() const { return m_album_seed; }
     bool is_light() const { return m_light; }
     // Active tokens: the static per-skin set, or the scheme generated from the
-    // album cover when dynamic colour is on.
-    const SkinTokens& skin() const
-    {
-        return m_use_dynamic ? m_tokens : get_skin_tokens(m_skin, m_light);
-    }
+    // album cover when dynamic colour is on. When the Liquid Glass material has
+    // flipped to light glass (bright backdrop) this is the ink-swapped copy, so
+    // every primitive drawn on top of the card follows the same polarity.
+    const SkinTokens& skin() const { return m_effective_valid ? m_effective : base_skin(); }
     FloatingSkin get_skin() const { return m_skin; }
+
+    // ---- Liquid Glass backdrop ---------------------------------------------
+    // Turns the capture worker on/off. It is only ever on while a glass skin is
+    // selected: the capture exclusion it needs also hides the window from every
+    // screenshot and screen-share tool, so it must not outlive the material that
+    // pays for it. Returns whether capture is usable.
+    bool set_backdrop_capture(bool on);
+    bool backdrop_ready() const { return m_backdrop.available(); }
+    // True when the material measured a bright desktop and flipped to light
+    // glass + dark ink.
+    bool backdrop_bright() const { return m_backdrop_bright; }
+    // Window moved/resized: the capture region changed, so the material must be
+    // rebuilt from a fresh frame (no stale glass while dragging).
+    void invalidate_backdrop();
+    const char* backdrop_status() const { return m_backdrop.status().c_str(); }
 
     // Font family used by all cached text formats. Empty/unknown falls back
     // to Segoe UI at CreateTextFormat time; callers resolve the real family.
@@ -219,6 +235,32 @@ protected:
     uint32_t m_pending_seed = 0;
     bool m_pending_valid = false;
     void rebuild_tokens();
+
+    // Base tokens (static per skin/light, or the album scheme) and the effective
+    // set actually used for drawing, which may carry the flipped (dark) ink when
+    // the glass measured a bright backdrop.
+    const SkinTokens& base_skin() const { return m_use_dynamic ? m_tokens : get_skin_tokens(m_skin, m_light); }
+    SkinTokens m_effective{};
+    bool m_effective_valid = false;
+    void refresh_effective_tokens();
+
+    // ---- Liquid Glass material state --------------------------------------
+    glass::BackdropSource m_backdrop;
+    glass::LensScratch m_lens_scratch;
+    std::vector<uint32_t> m_lens_frame;     // latest captured backdrop
+    ID2D1Bitmap* m_lens_bitmap = nullptr;   // uploaded card body, or null
+    uint64_t m_lens_serial = 0;             // capture serial the bitmap came from
+    uint64_t m_lens_signature = 0;          // cheap content fingerprint of the frame
+    uint64_t m_lens_built_ms = 0;
+    bool m_backdrop_bright = false;
+    bool m_backdrop_bright_valid = false;
+    bool m_backdrop_wanted = false;         // the active skin is a glass skin
+    bool m_lens_dirty = true;               // rebuild from the next frame
+    int m_lens_pad = 0;
+    int m_lens_w = 0, m_lens_h = 0;
+    bool ensure_lens_material(const D2D1_RECT_F& card);
+    void release_lens_material();
+    static uint64_t backdrop_signature(const uint32_t* px, int w, int h);
 
     // Active visual skin
     FloatingSkin m_skin = FloatingSkin::MD3;

@@ -22,6 +22,9 @@ D2DRenderer::D2DRenderer()
 
 D2DRenderer::~D2DRenderer()
 {
+    // Stop the capture worker before the window disappears: it holds the HWND to
+    // restore WDA_NONE, and a dead window would leak the exclusion.
+    m_backdrop.stop();
     release_resources();
     
     if (m_d2d_factory) m_d2d_factory->Release();
@@ -61,6 +64,7 @@ void D2DRenderer::release_resources()
     // ULW per-pixel-alpha path
     if (m_shadow_bitmap) { m_shadow_bitmap->Release(); m_shadow_bitmap = nullptr; }
     if (m_shadow_contact_bitmap) { m_shadow_contact_bitmap->Release(); m_shadow_contact_bitmap = nullptr; }
+    release_lens_material();
     if (m_ulw_target) { m_ulw_target->Release(); m_ulw_target = nullptr; }
     if (m_dib) { DeleteObject(m_dib); m_dib = nullptr; }
     if (m_mem_dc) { DeleteDC(m_mem_dc); m_mem_dc = nullptr; }
@@ -306,15 +310,217 @@ void D2DRenderer::set_skin(FloatingSkin skin)
     if (m_skin == skin) return;
     m_skin = skin;
     rebuild_skin_resources();
-    FB2K_console_formatter() << "Floating Clouds: skin switched to " << (skin == FloatingSkin::Mist ? "Mist" : "MD3");
+
+    // Liquid Glass is the only skin that needs the desktop behind the window.
+    // Turning the capture on also hides this window from every screenshot and
+    // screen-share tool (that is what WDA_EXCLUDEFROMCAPTURE does), so it is
+    // scoped to exactly the skins that consume the backdrop.
+    const bool glass_now = get_skin_tokens(skin, m_light).glass_backdrop;
+    set_backdrop_capture(glass_now);
+
+    const char* name = "MD3";
+    switch (skin) {
+        case FloatingSkin::Mist: name = "Mist"; break;
+        case FloatingSkin::LiquidGlass: name = "Liquid Glass"; break;
+        default: break;
+    }
+    FB2K_console_formatter() << "Floating Clouds: skin switched to " << name;
+}
+
+bool D2DRenderer::set_backdrop_capture(bool on)
+{
+    m_backdrop_wanted = on;
+    if (!on) {
+        m_backdrop.stop();          // also restores WDA_NONE on the window
+        release_lens_material();
+        if (m_backdrop_bright) {
+            m_backdrop_bright = false;
+            m_backdrop_bright_valid = false;
+            refresh_effective_tokens();
+        }
+        return false;
+    }
+    if (m_backdrop.available()) return true;
+    if (!m_hwnd || !::IsWindow(m_hwnd)) {
+        FB2K_console_formatter() << "Floating Clouds: liquid glass backdrop deferred (no window yet)";
+        return false;
+    }
+    const bool ok = m_backdrop.start(m_hwnd);
+    m_lens_dirty = true;
+    FB2K_console_formatter() << "Floating Clouds: liquid glass backdrop "
+                             << (ok ? "enabled" : "UNAVAILABLE (static frosted fallback)")
+                             << " - " << m_backdrop.status().c_str();
+    return ok;
+}
+
+void D2DRenderer::invalidate_backdrop()
+{
+    m_lens_dirty = true;
+    if (m_backdrop.available()) m_backdrop.request_now();
+}
+
+void D2DRenderer::release_lens_material()
+{
+    if (m_lens_bitmap) { m_lens_bitmap->Release(); m_lens_bitmap = nullptr; }
+    m_lens_w = m_lens_h = 0;
+    m_lens_serial = 0;
+    m_lens_signature = 0;
+    m_lens_frame.clear();
+    m_lens_dirty = true;
+}
+
+void D2DRenderer::refresh_effective_tokens()
+{
+    const SkinTokens& base = base_skin();
+    if (m_backdrop_bright && base.adaptive_ink && base.glass_backdrop) {
+        // Vibrancy: the glass measured a bright desktop and flipped to light
+        // glass, so the ink, the on-surface state layers and the progress track
+        // have to flip with it or the text disappears.
+        m_effective = base;
+        m_effective.on_surface = base.on_surface_bright;
+        m_effective.on_surface_variant = base.on_surface_variant_bright;
+        m_effective.button_fill = base.on_surface_bright;
+        m_effective.progress_track = base.on_surface_bright;
+        m_effective_valid = true;
+    } else {
+        m_effective_valid = false;
+    }
+}
+
+uint64_t D2DRenderer::backdrop_signature(const uint32_t* px, int w, int h)
+{
+    if (!px || w <= 0 || h <= 0) return 0;
+    // FNV-1a over a sparse grid: enough to notice a moving game or a window being
+    // dragged, cheap enough (a few hundred reads) to run on every new frame. This
+    // is what lets a static desktop cost zero material rebuilds.
+    uint64_t hash = 1469598103934665603ull;
+    const int step_x = (std::max)(1, w / 24);
+    const int step_y = (std::max)(1, h / 12);
+    for (int y = 0; y < h; y += step_y) {
+        const uint32_t* row = px + (size_t)y * w;
+        for (int x = 0; x < w; x += step_x) {
+            hash ^= (uint64_t)row[x];
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
+bool D2DRenderer::ensure_lens_material(const D2D1_RECT_F& card)
+{
+    if (m_mode != PresentMode::ULW) return false;
+    const SkinTokens& t = base_skin();
+    if (!t.glass_backdrop) return false;
+    if (!m_backdrop.available()) {
+        // The window may have been created after the skin was applied.
+        if (m_backdrop_wanted && m_hwnd && !m_backdrop.start(m_hwnd)) return false;
+        if (!m_backdrop.available()) return false;
+    }
+
+    const int w = m_dib_size.cx;
+    const int h = m_dib_size.cy;
+    if (w <= 0 || h <= 0 || !m_hwnd) return false;
+
+    // The lens samples inward, so the capture only has to cover the blur
+    // support around the card, not a refraction reach.
+    const int pad = (std::max)(12, (int)(3.0f * t.lens_frost + 8.0f));
+    m_lens_pad = pad;
+
+    RECT wr{};
+    ::GetWindowRect(m_hwnd, &wr);
+    m_backdrop.set_region(wr.left, wr.top, w, h, pad, 80);
+
+    int fw = 0, fh = 0, fpad = 0;
+    uint64_t serial = m_lens_serial;
+    const bool got_frame = m_backdrop.fetch(m_lens_frame, fw, fh, fpad, serial);
+    if (!got_frame && !m_lens_dirty) return m_lens_bitmap != nullptr;
+    if (!got_frame) return m_lens_bitmap != nullptr;   // wait for the first frame
+
+    // A frame captured for a different window size is stale; drop any bitmap of
+    // the old size rather than stretching it, and wait for the new region.
+    if (fw != w || fh != h) {
+        if (m_lens_bitmap && (m_lens_w != w || m_lens_h != h)) release_lens_material();
+        return m_lens_bitmap != nullptr;
+    }
+
+    const uint64_t sig = backdrop_signature(m_lens_frame.data(), fw + 2 * fpad, fh + 2 * fpad);
+    if (!m_lens_dirty && m_lens_bitmap && sig == m_lens_signature) {
+        m_lens_serial = serial;
+        return true;                       // same picture: no rebuild at all
+    }
+
+    glass::Backdrop bd;
+    bd.px = m_lens_frame.data();
+    bd.w = fw;
+    bd.h = fh;
+    bd.pad = fpad;
+
+    const int hint = m_backdrop_bright_valid ? (m_backdrop_bright ? 1 : 0) : -1;
+    glass::LensResult res = glass::build_lens_body(
+        w, h, bd, card.left, card.top, card.right, card.bottom,
+        t.corner_card, t.superellipse, t, m_lens_scratch, hint);
+    if (!res.ok) return m_lens_bitmap != nullptr;
+
+    // Hysteresis: keep the current polarity until the backdrop clearly crosses
+    // the other way, so a card hovering on the threshold cannot strobe. When the
+    // polarity does flip, rebuild once with the right veil in this same frame.
+    {
+        const float thr = t.ink_threshold;
+        bool want = m_backdrop_bright_valid ? m_backdrop_bright : res.bright;
+        if (m_backdrop_bright_valid) {
+            if (m_backdrop_bright && res.mean_luma < thr - 0.05f) want = false;
+            if (!m_backdrop_bright && res.mean_luma > thr + 0.05f) want = true;
+        }
+        if (want != res.bright) {
+            res = glass::build_lens_body(w, h, bd, card.left, card.top, card.right, card.bottom,
+                                         t.corner_card, t.superellipse, t, m_lens_scratch,
+                                         want ? 1 : 0);
+            if (!res.ok) return m_lens_bitmap != nullptr;
+        }
+        if (!m_backdrop_bright_valid || res.bright != m_backdrop_bright) {
+            m_backdrop_bright = res.bright;
+            m_backdrop_bright_valid = true;
+            refresh_effective_tokens();
+        }
+    }
+
+    const int lw = m_lens_scratch.body.empty() ? 0 : w;
+    const int lh = lw ? h : 0;
+    if (!lw) return false;
+
+    if (!m_lens_bitmap || m_lens_w != lw || m_lens_h != lh) {
+        release_lens_material();
+        HRESULT hr = m_render_target->CreateBitmap(
+            D2D1::SizeU((UINT)lw, (UINT)lh), m_lens_scratch.body.data(), (UINT)lw * 4,
+            D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                                     D2D1_ALPHA_MODE_PREMULTIPLIED)),
+            &m_lens_bitmap);
+        if (FAILED(hr)) { m_lens_bitmap = nullptr; return false; }
+        m_lens_w = lw;
+        m_lens_h = lh;
+    } else if (FAILED(m_lens_bitmap->CopyFromMemory(nullptr, m_lens_scratch.body.data(),
+                                                    (UINT)lw * 4))) {
+        release_lens_material();
+        return false;
+    }
+
+    m_lens_signature = sig;
+    m_lens_serial = serial;
+    m_lens_dirty = false;
+    m_lens_built_ms = (uint64_t)GetTickCount64();
+    return true;
 }
 
 void D2DRenderer::rebuild_tokens()
 {
     m_use_dynamic = m_album && m_album_seed != 0;
-    if (!m_use_dynamic) return;
-    m_tokens = (m_skin == FloatingSkin::Mist) ? dyn::scheme_mist(m_album_seed, m_light)
-                                              : dyn::scheme_md3(m_album_seed, m_light);
+    if (m_use_dynamic) {
+        m_tokens = (m_skin == FloatingSkin::Mist) ? dyn::scheme_mist(m_album_seed, m_light)
+                 : (m_skin == FloatingSkin::LiquidGlass) ? dyn::scheme_liquid_glass(m_album_seed, m_light)
+                 : dyn::scheme_md3(m_album_seed, m_light);
+    }
+    // The flipped-glass ink depends on the new base tokens.
+    refresh_effective_tokens();
 }
 
 void D2DRenderer::set_color_context(bool album, bool light)
@@ -338,10 +544,12 @@ void D2DRenderer::set_light(bool light)
 
 void D2DRenderer::rebuild_skin_resources()
 {
-    // The scheme depends on the skin (MD3 tint vs Mist accents), so regenerate.
+    // The scheme depends on the skin (MD3 tint vs Mist accents vs glass tint),
+    // so regenerate.
     rebuild_tokens();
     // Per-skin resources: shadow bitmaps, glass gradient brushes, cached fonts.
     release_glass_brushes();
+    release_lens_material();
     if (m_title_format) { m_title_format->Release(); m_title_format = nullptr; }
     if (m_artist_format) { m_artist_format->Release(); m_artist_format = nullptr; }
     if (m_small_format) { m_small_format->Release(); m_small_format = nullptr; }
@@ -437,9 +645,15 @@ void D2DRenderer::draw_surface_card(const D2D1_RECT_F& rect, float radius)
     // One module owns the card's shape, elevation and material (glass_card.h),
     // so the shadow mask and the silhouette can never drift apart.
     ensure_card_geometry(rect, radius);
+
+    // Liquid Glass: replace the body with the lensed backdrop when the capture
+    // is available; paint_card() falls back to the static recipe otherwise.
+    ID2D1Bitmap* lens = nullptr;
+    if (skin().glass_backdrop && ensure_lens_material(rect)) lens = m_lens_bitmap;
+
     glass::paint_card(m_render_target, rect, skin(), m_card_geo,
                       m_shadow_bitmap, m_shadow_contact_bitmap,
-                      D2D1::SizeF((float)m_dib_size.cx, (float)m_dib_size.cy));
+                      D2D1::SizeF((float)m_dib_size.cx, (float)m_dib_size.cy), lens);
 }
 
 void D2DRenderer::on_resize(CSize size)

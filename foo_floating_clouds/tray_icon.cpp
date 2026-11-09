@@ -117,7 +117,7 @@ void TrayIcon::show_context_menu()
     if (cmd >= 1001 && cmd <= 1008) {
         FloatingStyle style = static_cast<FloatingStyle>(cmd - 1001);
         m_window->set_style(style);
-    } else if (cmd >= 3001 && cmd <= 3002) {
+    } else if (cmd >= 3001 && cmd < 3001 + (int)FloatingSkin::Count) {
         FloatingSkin skin = static_cast<FloatingSkin>(cmd - 3001);
         m_window->set_skin(skin);
     } else if (cmd == 2001) {

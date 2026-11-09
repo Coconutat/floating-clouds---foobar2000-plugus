@@ -248,6 +248,13 @@ BOOL FloatingCloudsWindow::OnEraseBkgnd(CDCHandle dc)
 void FloatingCloudsWindow::OnSize(UINT nType, CSize size)
 {
     on_resize(size);
+    invalidate_backdrop();
+}
+
+void FloatingCloudsWindow::OnMove(CPoint pt)
+{
+    SetMsgHandled(FALSE);
+    invalidate_backdrop();
 }
 
 LRESULT FloatingCloudsWindow::OnNcHitTest(CPoint point)
@@ -333,6 +340,17 @@ void FloatingCloudsWindow::OnLButtonUp(UINT nFlags, CPoint point)
                             pos.y = r.top - PlaylistPanel::PANEL_HEIGHT - 8;
                         if (pos.y < 0) pos.y = 0;
                         m_playlist_panel->open(m_hWnd, pos);
+                        // The panel is created lazily on first open, so it starts
+                        // on the default skin. Push the live appearance settings
+                        // now - otherwise the first open shows Material 3 while
+                        // the main window is on another skin (visible for Mist,
+                        // and unmissable for Liquid Glass).
+                        if (m_playlist_panel->IsWindow()) {
+                            m_playlist_panel->set_skin(get_skin());
+                            m_playlist_panel->set_color_context(
+                                m_color_mode == FloatingColorMode::Album, effective_light());
+                            m_playlist_panel->set_font_family(get_font_family());
+                        }
                     }
                     break;
                 }

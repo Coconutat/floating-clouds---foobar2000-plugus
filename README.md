@@ -7,7 +7,7 @@ Windows Template Library: WTL10_01_Release
 
 A foobar2000 component that shows a floating now-playing overlay on the desktop or over fullscreen games. It displays album art, track title, artist, and playback controls.
 
-![Material 3 and Mist, dark and light](imgs/skins.png)
+![Material 3, Mist and Liquid Glass, dark and light](imgs/skins.png)
 
 ## Components
 
@@ -23,7 +23,7 @@ This repository contains three independent foobar2000 components:
 
 - Floating overlay: an independent topmost window above the desktop or fullscreen games
 - 7 styles: Minimal, Full, Album Focus, Progress Ring, Visualizer, Lyrics Line, Visualizer + Cover
-- 2 materials (skins): **Material 3** and **Mist**, each with dark and light palettes
+- 3 materials (skins): **Material 3**, **Mist** and **Liquid Glass**, each with dark and light palettes
 - 4 colour modes: follow foobar2000, force dark, force light, or **Album (cover colour)** — the scheme's hue is taken from the current album cover
 - Vector control icons: one weight for the whole row, state-aware (play shows Pause while playing), drawn as paths instead of font glyphs so they never shift with the UI font
 - Font family: follows foobar2000's default UI font, or pick any installed family from the dropdown in Preferences
@@ -63,6 +63,10 @@ root (no foobar2000 SDK required) to regenerate every image in `imgs/`.
     <td align="center"><img src="imgs/Mist/card-dark.png" width="380" alt="Mist dark"/><br/><b>Mist · dark</b></td>
     <td align="center"><img src="imgs/Mist/card-light.png" width="380" alt="Mist light"/><br/><b>Mist · light</b></td>
   </tr>
+  <tr>
+    <td align="center"><img src="imgs/LiquidGlass/card-dark.png" width="380" alt="Liquid Glass dark"/><br/><b>Liquid Glass · dark</b></td>
+    <td align="center"><img src="imgs/LiquidGlass/card-light.png" width="380" alt="Liquid Glass light"/><br/><b>Liquid Glass · light</b></td>
+  </tr>
 </table>
 
 **Album colour.** With `Album (cover colour)` the whole scheme follows the playing cover: rows 1–2 are
@@ -95,9 +99,14 @@ The previews above show the **Full** style; every style uses the same material a
 | --- | --- |
 | **Material 3** | Tonal surface card: surface-container fill, rounded corners, elevation shadow, MD3 type ramp. The active control is a filled icon button (`primary` fill + `on-primary` glyph) and the progress track is `secondary-container`. |
 | **Mist** | Frosted floating panel: near-opaque body with a shallow vertical gradient, a 1px inner rim that is bright at the top edge and shaded at the bottom, a specular top highlight, continuous ("squircle") corners, and a two-layer shadow fitted inside the window margin. |
+| **Liquid Glass** | The one material that is not a fill: the desktop behind the window is captured, blurred, and refracted by a lens band at the edge (18px band, 11px bend, ~1px chromatic dispersion), then tinted and lit. Text stays readable through **vibrancy**: the material measures the backdrop and flips polarity — dark glass with white ink over a dark desktop (9.2:1), light glass with dark ink over a bright one (10.4:1). Falls back to the static frosted recipe where the backdrop cannot be sampled. |
 
-Neither material claims to be backdrop-blur glass: a layered window cannot sample what is behind it,
-so both are honest frosted panels rather than a fake blur.
+Material 3 and Mist never claimed to be backdrop-blur glass, and are not: they are honest frosted
+panels. Liquid Glass *does* sample the backdrop, which is only possible because the window excludes
+itself from screen capture (`SetWindowDisplayAffinity(..., WDA_EXCLUDEFROMCAPTURE)`) and a worker
+thread copies the desktop behind it. **While Liquid Glass is the active skin, the overlay is therefore
+invisible to screenshots, recordings and screen sharing** (Snipping Tool, OBS, Teams/Zoom,
+Windows.Graphics.Capture). Switching to Material 3 or Mist restores normal capture immediately.
 
 ## Colour modes
 
@@ -105,7 +114,7 @@ so both are honest frosted panels rather than a fake blur.
 | --- | --- |
 | Follow foobar2000 | Uses foobar2000's dark/light setting (default) |
 | Dark / Light | Forces the appearance |
-| **Album (cover colour)** | Derives the scheme's hue from the current album cover. Material 3 gets a full dynamic scheme; Mist gets a tinted panel with the same structure. Light/dark still follows foobar2000, because the cover supplies the hue, not the appearance. |
+| **Album (cover colour)** | Derives the scheme's hue from the current album cover. Material 3 gets a full dynamic scheme; Mist gets a tinted panel with the same structure; Liquid Glass tints its veil and fallback fill (a transparent film takes far less chroma than a surface). Light/dark still follows foobar2000, because the cover supplies the hue, not the appearance. |
 
 How album colour stays readable: the cover only supplies a **hue**. Every role is then placed at its
 Material 3 **tone** (a fixed lightness) with a chroma budget that shrinks toward black and white, so

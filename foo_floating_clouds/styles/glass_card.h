@@ -264,7 +264,12 @@ inline bool build_shadow_bitmap(ID2D1RenderTarget* rt, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
-// Paint. Order matters: elevation, body, inner rim, top gloss, bottom depth.
+// Paint. Order matters: elevation, then the body, then the rim/top gloss/depth
+// layers. `lens` is the pre-rendered Liquid Glass body (glass_lens.h): when it is
+// present it already contains the backdrop, lens, rim, specular and inner depth,
+// so it is drawn in place of every body layer. When it is absent (no capture
+// available, or the Hwnd fallback) the static glass recipe below paints instead,
+// which is what keeps the skin usable on systems the lens cannot serve.
 // ---------------------------------------------------------------------------
 inline void fill_gradient(ID2D1RenderTarget* rt, ID2D1PathGeometry* geo,
                           const D2D1_RECT_F& rect, const D2D1_GRADIENT_STOP* stops, UINT32 count)
@@ -288,7 +293,7 @@ inline void fill_gradient(ID2D1RenderTarget* rt, ID2D1PathGeometry* geo,
 
 inline void paint_card(ID2D1RenderTarget* rt, const D2D1_RECT_F& rect, const SkinTokens& t,
                        const CardGeometry& geo, ID2D1Bitmap* shadow, ID2D1Bitmap* contact,
-                       const D2D1_SIZE_F& surface)
+                       const D2D1_SIZE_F& surface, ID2D1Bitmap* lens = nullptr)
 {
     if (!rt || !geo.outer) return;
 
@@ -296,6 +301,12 @@ inline void paint_card(ID2D1RenderTarget* rt, const D2D1_RECT_F& rect, const Ski
     const D2D1_RECT_F full = D2D1::RectF(0.0f, 0.0f, surface.width, surface.height);
     if (contact) rt->DrawBitmap(contact, full, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     if (shadow)  rt->DrawBitmap(shadow, full, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+
+    // 2) The lensed body, when the live backdrop is available.
+    if (lens) {
+        rt->DrawBitmap(lens, full, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        return;
+    }
 
     if (!t.glass) {
         // Opaque MD3 card: a single flat fill, exactly as before.

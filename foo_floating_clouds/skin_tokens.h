@@ -91,6 +91,41 @@ struct SkinTokens {
     float title_size;
     float artist_size;
     float small_size;
+
+    // ---- Liquid glass material (glass_backdrop) ----------------------------
+    // The body is not a fill: it is the desktop captured behind the window,
+    // refracted by a lens band at the edge. The tokens above still apply - the
+    // rim / gloss / depth values are the static fallback used when the backdrop
+    // cannot be sampled (Hwnd path, capture refused, Windows < 10 2004).
+    // MD3 and Mist leave these zero-initialised, so their look cannot change.
+    bool glass_backdrop;      // body = live captured backdrop + edge lens
+    float lens_width;         // px band inside the edge that bends light
+    float lens_power;         // px of maximum sample offset, at the very edge
+    float lens_dispersion;    // per-channel fraction of that offset (R/B split)
+    float lens_frost;         // box-blur radius applied to the captured backdrop
+    uint32_t lens_tint;       // veil colour laid over the backdrop
+    float lens_tint_alpha;    // veil alpha where the backdrop is darkest
+    float lens_tint_gain;     // extra veil per unit of backdrop luminance
+    float lens_saturation;    // backdrop saturation multiplier (1 = untouched)
+    float lens_alpha;         // body alpha (the rest is the baked backdrop)
+
+    // ---- Adaptive ink (vibrancy) -------------------------------------------
+    // A glass card sits on an unknown backdrop, and one ink cannot stay legible
+    // on both a black game and a white document: white 15 px text needs a card
+    // luma <= ~0.18, which a veil strong enough to deliver that would erase the
+    // material. Apple's answer is vibrancy - the material flips polarity with
+    // what is behind it - so the glass skins do the same: over a bright backdrop
+    // the veil turns white and the ink turns dark. `ink_threshold` is the mean
+    // backdrop luminance where the flip happens (with hysteresis in the
+    // renderer, so a hovering card cannot strobe).
+    bool adaptive_ink;        // false = this skin always uses on_surface
+    float ink_threshold;      // mean backdrop luma (0..1) that flips the glass
+    uint32_t on_surface_bright;          // dark ink for the flipped (light) glass
+    uint32_t on_surface_variant_bright;
+    uint32_t lens_tint_bright;           // white veil used when the glass flips
+    float lens_tint_bright_alpha;
+    float lens_tint_bright_gain;
+    float lens_specular;      // strength of the edge specular (0 = no lens light)
 };
 
 // MD3 skin (dark): exactly the values shipped before the material rework. Only
@@ -244,4 +279,129 @@ constexpr SkinTokens mist_skin_light = {
     15.0f,                           // title_size
     12.0f,                           // artist_size
     10.0f,                           // small_size
+};
+
+// Liquid Glass (dark) - the first skin whose body is not a fill.
+//
+// Every earlier skin had to be near-opaque because an UpdateLayeredWindow
+// surface cannot sample the desktop behind it: a low-alpha fill just lets sharp
+// desktop detail read through the card. This skin lifts that constraint the
+// only way it can be lifted - the backdrop is CAPTURED as pixels (see
+// backdrop.h), blurred, and refracted, then baked into the card. The card is
+// therefore still ~opaque at present time; the transparency you see is the
+// captured desktop, not DWM compositing. `lens_*` drives that material.
+//
+// Fallback: when no backdrop can be sampled (Hwnd path, capture refused, sleep
+// or a secure desktop), paint_card() draws the glass=true static recipe below -
+// still this skin, just without the lens.
+constexpr SkinTokens liquid_glass_skin = {
+    0x141419,                        // surface (opaque fallback / Hwnd)
+    0x1D1D24,                        // surface_high
+    0x282831,                        // surface_highest
+    0xF7F7FA,                        // on_surface
+    0xA6A6B0,                        // on_surface_variant
+    0x0A84FF,                        // primary (iOS system blue, dark)
+    0xFF375F,                        // tertiary (system pink; visualizer tail)
+    0xFF453A,                        // error (system red, dark)
+    0xFFFFFF,                        // on_button_active (white glyph on the
+                                     // 32% accent capsule)
+    0xFFFFFF, 0.12f,                 // button_fill (frosted capsule, unselected)
+    0x0A84FF, 0.85f,                 // button_fill_active (tinted capsule: solid
+                                     // enough for the white glyph to read on it)
+    0xFFFFFF, 0.16f,                 // progress_track
+    true,                            // glass (static fallback material)
+    true,                            // superellipse (continuous corners)
+    0x1A1A22, 0.90f,                 // card_fill_top (fallback only)
+    0x0D0D12, 0.94f,                 // card_fill_bottom
+    0xFFFFFF, 0.55f,                 // card_rim_light  (crisper than Mist: the
+    0x000000, 0.40f,                 // card_rim_shade   lens needs a hard rim)
+    0xFFFFFF, 0.16f, 0.30f,          // card_gloss
+    0x000000, 0.12f, 0.82f,          // card_depth
+    28.0f,                           // corner_card
+    8.0f,                            // shadow_inset
+    0.26f, 4,                        // ambient shadow
+    0.14f, 1,                        // contact shadow
+    3.0f,                            // shadow_offset_y
+    0.08f,                           // hover_state
+    0.12f,                           // pressed_state
+    15.0f,                           // title_size
+    12.0f,                           // artist_size
+    10.0f,                           // small_size
+    // ---- lens material -------------------------------------------------
+    true,                            // glass_backdrop
+    18.0f,                           // lens_width   (px band at the edge)
+    11.0f,                           // lens_power   (px of bend at the edge;
+                                     // 0.61 of the band, near the clamp)
+    0.10f,                           // lens_dispersion (R/B offset fraction)
+    4.0f,                            // lens_frost   (box-blur radius; 2 passes
+                                     // per axis -> sigma ~3.6 px)
+    0x0A0A12,                        // lens_tint (dark veil keeps white text)
+    0.26f,                           // lens_tint_alpha
+    0.30f,                           // lens_tint_gain (+ = veil follows a bright
+                                     // backdrop, so text never loses contrast)
+    1.15f,                           // lens_saturation
+    0.94f,                           // lens_alpha
+    true,                            // adaptive_ink (flip to light glass)
+    0.52f,                           // ink_threshold
+    0x0E0E14,                        // on_surface_bright (dark ink)
+    0x4C4C58,                        // on_surface_variant_bright
+    0xFFFFFF,                        // lens_tint_bright (white veil)
+    0.62f,                           // lens_tint_bright_alpha
+    0.12f,                           // lens_tint_bright_gain
+    0.90f,                           // lens_specular
+};
+
+// Liquid Glass (light): the same lens over a bright backdrop. The veil is white
+// and its gain is NEGATIVE - over an already-bright backdrop a white veil would
+// only wash the text out, so the material lifts the dark areas instead.
+constexpr SkinTokens liquid_glass_skin_light = {
+    0xF3F4F8,                        // surface (opaque fallback / Hwnd)
+    0xE9EAF0,                        // surface_high
+    0xDEE0E8,                        // surface_highest
+    0x101014,                        // on_surface
+    0x55555F,                        // on_surface_variant
+    0x007AFF,                        // primary (system blue, light)
+    0xFF2D55,                        // tertiary
+    0xFF3B30,                        // error
+    0xFFFFFF,                        // on_button_active
+    0x000000, 0.06f,                 // button_fill
+    0x007AFF, 0.85f,                 // button_fill_active (white glyph needs a
+                                     // solid enough accent under it)
+    0x000000, 0.14f,                 // progress_track
+    true,                            // glass (static fallback material)
+    true,                            // superellipse
+    0xFFFFFF, 0.90f,                 // card_fill_top (fallback only)
+    0xEDF1F7, 0.95f,                 // card_fill_bottom
+    0xFFFFFF, 0.80f,                 // card_rim_light
+    0x000000, 0.10f,                 // card_rim_shade
+    0xFFFFFF, 0.35f, 0.26f,          // card_gloss
+    0x000000, 0.05f, 0.86f,          // card_depth
+    28.0f,                           // corner_card
+    8.0f,                            // shadow_inset
+    0.16f, 4,                        // ambient shadow
+    0.10f, 1,                        // contact shadow
+    3.0f,                            // shadow_offset_y
+    0.08f,                           // hover_state
+    0.12f,                           // pressed_state
+    15.0f,                           // title_size
+    12.0f,                           // artist_size
+    10.0f,                           // small_size
+    true,                            // glass_backdrop
+    18.0f,                           // lens_width
+    10.0f,                           // lens_power
+    0.09f,                           // lens_dispersion
+    4.0f,                            // lens_frost
+    0xFFFFFF,                        // lens_tint (white veil: dark ink needs a
+    0.58f,                           // lens_tint_alpha    light card, always)
+    0.12f,                           // lens_tint_gain
+    1.08f,                           // lens_saturation
+    0.94f,                           // lens_alpha
+    false,                           // adaptive_ink (light glass never flips)
+    0.50f,                           // ink_threshold (unused)
+    0x101014,                        // on_surface_bright (same as on_surface)
+    0x55555F,                        // on_surface_variant_bright
+    0xFFFFFF,                        // lens_tint_bright (unused)
+    0.58f,                           // lens_tint_bright_alpha
+    0.12f,                           // lens_tint_bright_gain
+    0.75f,                           // lens_specular
 };
