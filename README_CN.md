@@ -7,7 +7,7 @@ Windows Template Library: WTL10_01_Release
 
 一个 foobar2000 组件：在桌面或全屏游戏之上显示悬浮的正在播放窗口，包含封面、标题、艺人与播放控制。
 
-![Material 3、Mist 与液态玻璃，深色与浅色](imgs/skins.png)
+![Material 3 与 Mist 的深色/浅色，以及液态玻璃在两种背景下的样子](imgs/skins.png)
 
 ## 组件
 
@@ -23,7 +23,7 @@ Windows Template Library: WTL10_01_Release
 
 - 悬浮窗口：独立的置顶窗口，浮于桌面或全屏游戏之上
 - 7 种风格：极简、完整、封面聚焦、进度环、可视化、歌词行、可视化 + 封面
-- 3 种材质（皮肤）：**Material 3**、**Mist** 与 **液态玻璃（Liquid Glass）**，各有深色和浅色调色板
+- 3 种材质（皮肤）：**Material 3** 与 **Mist** 各有深色、浅色调色板；**液态玻璃（Liquid Glass）** 只有一种外观——它的颜色来自窗口背后的桌面
 - 4 种颜色模式：跟随 foobar2000、强制深色、强制浅色、**封面取色**（主色调取自当前专辑封面）
 - 矢量控制图标：整排同一字重、带状态（播放中显示暂停），用路径绘制而不是字体字符，换 UI 字体不会变形
 - 字体：跟随 foobar2000 的默认 UI 字体，或在偏好设置的下拉里选任意已安装字体
@@ -51,7 +51,8 @@ Windows Template Library: WTL10_01_Release
 
 下面的预览图都是用**组件自己的绘制代码**以 2x 渲染的（同一套 token、圆角几何和图标），
 所以它们和真实窗口的几何一致，而不是近似示意图。这些图可复现：在仓库根目录运行
-`tools\preview\build_preview.cmd`，再运行 `preview.exe`（不需要 foobar2000 SDK）即可重新生成 `imgs/` 下全部图片。
+`tools\preview\build_preview.cmd`，再运行 `preview.exe`（不需要 foobar2000 SDK）即可重新生成 Material 3、Mist 的卡片与首图网格。
+液态玻璃那两张由材质探针渲染：透镜需要抓取的背景，所以它用合成的暗/亮背景（游戏画面与文档）。
 
 <table>
   <tr>
@@ -61,6 +62,10 @@ Windows Template Library: WTL10_01_Release
   <tr>
     <td align="center"><img src="imgs/Mist/card-dark.png" width="380" alt="Mist 深色"/><br/><b>Mist · 深色</b></td>
     <td align="center"><img src="imgs/Mist/card-light.png" width="380" alt="Mist 浅色"/><br/><b>Mist · 浅色</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="imgs/LiquidGlass/over-dark.png" width="380" alt="液态玻璃 · 暗背景"/><br/><b>液态玻璃 · 暗背景</b></td>
+    <td align="center"><img src="imgs/LiquidGlass/over-bright.png" width="380" alt="液态玻璃 · 亮背景"/><br/><b>液态玻璃 · 亮背景</b></td>
   </tr>
 </table>
 
@@ -96,7 +101,7 @@ Windows Template Library: WTL10_01_Release
 | **液态玻璃（Liquid Glass）** | 唯一一种"不是填色"的材质：抓取窗口背后的真实桌面，模糊后由边缘透镜带折射（带宽 18px、位移 11px、约 1px 色散），再罩色、打光。文字靠 **vibrancy** 保持可读：材质测量背景亮度后自动翻转极性——暗桌面用深色玻璃 + 白字（9.2:1），亮桌面用浅色玻璃 + 深字（10.4:1）。抓不到背景时回退为静态磨砂配方。 |
 
 Material 3 与 Mist 从来不自称是「背景模糊玻璃」，它们确实不是：是诚实的磨砂面板。
-液态玻璃**真的**采样背景，这只有在窗口把自身排除出抓屏（`SetWindowDisplayAffinity(..., WDA_EXCLUDEFROMCAPTURE)`）
+液态玻璃只有**一种外观**：它不是「深色版＋浅色版」，而是一种半透明材质，颜色与墨色极性由它测到的背景决定——所以颜色模式对它不适用（选中它时，偏好设置里那个下拉只剩一个置灰的「跟随背后内容」）。液态玻璃**真的**采样背景，这只有在窗口把自身排除出抓屏（`SetWindowDisplayAffinity(..., WDA_EXCLUDEFROMCAPTURE)`）
 并由工作线程拷贝其背后桌面的前提下才成立。**因此当液态玻璃是当前皮肤时，悬浮窗对截图、录屏、屏幕共享不可见**
 （截图工具、OBS、Teams/Zoom、Windows.Graphics.Capture）。切回 Material 3 或 Mist 立即恢复正常抓取。
 
@@ -106,7 +111,7 @@ Material 3 与 Mist 从来不自称是「背景模糊玻璃」，它们确实不
 | --- | --- |
 | 跟随 foobar2000 | 用 foobar2000 的深/浅色设置（默认） |
 | 深色 / 浅色 | 强制外观 |
-| **封面取色** | 主色调取自当前专辑封面。Material 3 得到完整动态方案；Mist 得到同样结构、但被染色的面板；液态玻璃只染罩色与回退填充（一层透明薄膜能承受的彩度远低于实体表面）。深/浅仍跟随 foobar2000——封面只提供色相，不决定明暗。 |
+| **封面取色** | 主色调取自当前专辑封面。Material 3 得到完整动态方案；Mist 得到同样结构、但被染色的面板。液态玻璃**不吃取色**：它的颜色就是窗口背后的内容，再用封面染它等于两个互相矛盾的取色源。深/浅仍跟随 foobar2000——封面只提供色相，不决定明暗。 |
 
 封面取色为什么还能保证可读：封面只提供**色相**，每个角色再被放到 Material 3 规定的 **tone**（固定明度）上，
 彩度按黑白两端收缩。于是 `primary`/`on-primary`、`surface`/`on-surface` 这些配对无论封面长什么样都保持对比度；

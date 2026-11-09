@@ -7,7 +7,7 @@ Windows Template Library: WTL10_01_Release
 
 A foobar2000 component that shows a floating now-playing overlay on the desktop or over fullscreen games. It displays album art, track title, artist, and playback controls.
 
-![Material 3, Mist and Liquid Glass, dark and light](imgs/skins.png)
+![Material 3 and Mist in dark and light; Liquid Glass over two different backdrops](imgs/skins.png)
 
 ## Components
 
@@ -23,7 +23,7 @@ This repository contains three independent foobar2000 components:
 
 - Floating overlay: an independent topmost window above the desktop or fullscreen games
 - 7 styles: Minimal, Full, Album Focus, Progress Ring, Visualizer, Lyrics Line, Visualizer + Cover
-- 3 materials (skins): **Material 3**, **Mist** and **Liquid Glass**, each with dark and light palettes
+- 3 materials (skins): **Material 3** and **Mist** with dark and light palettes, plus **Liquid Glass**, which has a single appearance because its colour comes from the desktop behind it
 - 4 colour modes: follow foobar2000, force dark, force light, or **Album (cover colour)** — the scheme's hue is taken from the current album cover
 - Vector control icons: one weight for the whole row, state-aware (play shows Pause while playing), drawn as paths instead of font glyphs so they never shift with the UI font
 - Font family: follows foobar2000's default UI font, or pick any installed family from the dropdown in Preferences
@@ -52,7 +52,9 @@ This repository contains three independent foobar2000 components:
 The previews are rendered at 2x from the component's own painter (same tokens, corner geometry
 and icons as the shipped build), so they match the real window geometry rather than approximating it.
 They are reproducible: run `tools\preview\build_preview.cmd` and then `preview.exe` from the repository
-root (no foobar2000 SDK required) to regenerate every image in `imgs/`.
+root (no foobar2000 SDK required) to regenerate the Material 3 and Mist cards and the hero grid. The
+two Liquid Glass cards come from the material probe instead, which renders the lens over synthetic
+backdrops (a dark game scene and a bright document) because the lens needs a captured backdrop.
 
 <table>
   <tr>
@@ -64,8 +66,8 @@ root (no foobar2000 SDK required) to regenerate every image in `imgs/`.
     <td align="center"><img src="imgs/Mist/card-light.png" width="380" alt="Mist light"/><br/><b>Mist · light</b></td>
   </tr>
   <tr>
-    <td align="center"><img src="imgs/LiquidGlass/card-dark.png" width="380" alt="Liquid Glass dark"/><br/><b>Liquid Glass · dark</b></td>
-    <td align="center"><img src="imgs/LiquidGlass/card-light.png" width="380" alt="Liquid Glass light"/><br/><b>Liquid Glass · light</b></td>
+    <td align="center"><img src="imgs/LiquidGlass/over-dark.png" width="380" alt="Liquid Glass over a dark backdrop"/><br/><b>Liquid Glass · over a dark backdrop</b></td>
+    <td align="center"><img src="imgs/LiquidGlass/over-bright.png" width="380" alt="Liquid Glass over a bright backdrop"/><br/><b>Liquid Glass · over a bright backdrop</b></td>
   </tr>
 </table>
 
@@ -114,7 +116,7 @@ Windows.Graphics.Capture). Switching to Material 3 or Mist restores normal captu
 | --- | --- |
 | Follow foobar2000 | Uses foobar2000's dark/light setting (default) |
 | Dark / Light | Forces the appearance |
-| **Album (cover colour)** | Derives the scheme's hue from the current album cover. Material 3 gets a full dynamic scheme; Mist gets a tinted panel with the same structure; Liquid Glass tints its veil and fallback fill (a transparent film takes far less chroma than a surface). Light/dark still follows foobar2000, because the cover supplies the hue, not the appearance. |
+| **Album (cover colour)** | Derives the scheme's hue from the current album cover. Material 3 gets a full dynamic scheme; Mist gets a tinted panel with the same structure. Liquid Glass ignores it: that material's colour is whatever is behind the window, so tinting it from the cover would be a second, contradictory source. Light/dark still follows foobar2000, because the cover supplies the hue, not the appearance. |
 
 How album colour stays readable: the cover only supplies a **hue**. Every role is then placed at its
 Material 3 **tone** (a fixed lightness) with a chroma budget that shrinks toward black and white, so
