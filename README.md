@@ -129,6 +129,9 @@ in Preferences ("(Follow foobar2000)" is the first entry).
 ## Requirements
 
 - foobar2000 v2.0 or later (Windows 10 64-bit)
+- Liquid Glass additionally needs **Windows 10 version 2004 (build 19041) or later** for backdrop
+  capture; on older builds, and in exclusive-fullscreen games, that skin falls back to its static
+  frosted recipe automatically
 
 ## Build
 
