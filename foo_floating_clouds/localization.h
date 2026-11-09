@@ -47,6 +47,14 @@ inline const wchar_t* tr_skin(FloatingSkin s)
 }
 
 // Localized name of a color mode.
+// Liquid Glass has no appearance setting: it is one material whose colour comes
+// from whatever is behind the window, so the colour-mode control shows this
+// single, disabled entry instead of four meaningless choices.
+inline const wchar_t* tr_color_mode_glass()
+{
+    return tr(L"Follow backdrop", L"跟随背后内容");
+}
+
 inline const wchar_t* tr_color_mode(FloatingColorMode m)
 {
     switch (m) {

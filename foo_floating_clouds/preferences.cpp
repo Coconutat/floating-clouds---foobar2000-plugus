@@ -317,6 +317,9 @@ private:
     void SetControls(const PrefsState& s);
     PrefsState ReadUI();
     void Commit();
+    // Colour mode is meaningless for Liquid Glass: show one disabled entry and
+    // leave the stored preference alone.
+    void RefreshColorModeCombo();
     bool HasChanged();
     void OnChanged();
     void UpdateOpacityLabel(int opacity);
@@ -375,7 +378,7 @@ void CMyPreferences::SetControls(const PrefsState& s)
     skin_combo.SetCurSel(skin);
 
     CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    refill_combo(mode_combo, (int)FloatingColorMode::Count, [](int i) { return tr_color_mode(static_cast<FloatingColorMode>(i)); });
+    RefreshColorModeCombo();
     int mode = s.color_mode;
     if (mode < 0 || mode >= (int)FloatingColorMode::Count) mode = DEFAULT_COLOR_MODE;
     mode_combo.SetCurSel(mode);
@@ -426,9 +429,13 @@ PrefsState CMyPreferences::ReadUI()
     combo = GetDlgItem(IDC_SKIN);
     sel = combo.GetCurSel();
     if (sel >= 0) s.skin = sel;
+    // Liquid Glass decides its own appearance from the backdrop, so the control
+    // is disabled there and the stored preference must survive untouched.
     combo = GetDlgItem(IDC_COLOR_MODE);
-    sel = combo.GetCurSel();
-    if (sel >= 0) s.color_mode = sel;
+    if (combo.IsWindowEnabled()) {
+        sel = combo.GetCurSel();
+        if (sel >= 0) s.color_mode = sel;
+    }
     combo = GetDlgItem(IDC_LANGUAGE);
     sel = combo.GetCurSel();
     if (sel >= 0) s.language = sel;
@@ -494,8 +501,36 @@ void CMyPreferences::OnStyleChanged(UINT, int, CWindow)
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
 
+void CMyPreferences::RefreshColorModeCombo()
+{
+    CComboBox mode = GetDlgItem(IDC_COLOR_MODE);
+    if (!mode) return;
+
+    CComboBox skin = GetDlgItem(IDC_SKIN);
+    const int sel = skin ? skin.GetCurSel() : -1;
+    const bool glass = (sel == (int)FloatingSkin::LiquidGlass);
+
+    if (glass) {
+        mode.ResetContent();
+        mode.AddString(tr_color_mode_glass());
+        mode.SetCurSel(0);
+        mode.EnableWindow(FALSE);
+        return;
+    }
+
+    mode.EnableWindow(TRUE);
+    int want = m_loaded.color_mode;
+    if (want < 0 || want >= (int)FloatingColorMode::Count) want = DEFAULT_COLOR_MODE;
+    refill_combo(mode, (int)FloatingColorMode::Count,
+                 [](int i) { return tr_color_mode(static_cast<FloatingColorMode>(i)); });
+    mode.SetCurSel(want);
+}
+
 void CMyPreferences::OnSkinChanged(UINT, int, CWindow)
 {
+    // Refresh the mode control BEFORE committing: switching to Liquid Glass must
+    // not overwrite the stored colour mode with the disabled entry's index.
+    RefreshColorModeCombo();
     Commit();
     FloatingCloudsWindow::apply_preferences(); // hot reload
 }
@@ -526,7 +561,7 @@ void CMyPreferences::ReloadLocalizedStrings()
     CComboBox skin_combo = GetDlgItem(IDC_SKIN);
     refill_combo(skin_combo, (int)FloatingSkin::Count, [](int i) { return tr_skin(static_cast<FloatingSkin>(i)); });
     CComboBox mode_combo = GetDlgItem(IDC_COLOR_MODE);
-    refill_combo(mode_combo, (int)FloatingColorMode::Count, [](int i) { return tr_color_mode(static_cast<FloatingColorMode>(i)); });
+    RefreshColorModeCombo();
 
     // Font combo item 0 follows the UI language; keep the selected face.
     CComboBox font_combo = GetDlgItem(IDC_FONT_FAMILY);

@@ -12,6 +12,12 @@
 
 inline const SkinTokens& get_skin_tokens(FloatingSkin skin, bool light)
 {
+    // Liquid Glass is one material, not a light/dark pair: its ink polarity is
+    // decided by the backdrop it measured (adaptive_ink), so the appearance
+    // setting must not change it. Ignoring `light` here is what makes the skin
+    // be the same glass whatever the colour mode says.
+    if (skin == FloatingSkin::LiquidGlass) return liquid_glass_skin;
+
     if (light) {
         return (skin == FloatingSkin::Mist) ? mist_skin_light : md3_skin_light;
     }

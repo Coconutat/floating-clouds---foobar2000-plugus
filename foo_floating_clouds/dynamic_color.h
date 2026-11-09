@@ -262,52 +262,6 @@ inline SkinTokens scheme_mist(uint32_t seed, bool light)
     return t;
 }
 
-// The Liquid Glass material, tinted by the cover. Unlike MD3 and Mist the panel
-// is not a surface fill: it is a veil over a captured backdrop, so the hue has to
-// live in the veil (and in the static fallback fill), at a much lower chroma than
-// a tonal surface would take - a lift of colour in a transparent film reads as a
-// coloured gel, not as glass. The accents still come from the full-chroma scheme
-// so the controls keep their snap.
-inline SkinTokens scheme_liquid_glass(uint32_t seed, bool light)
-{
-    const SkinTokens& base = light ? liquid_glass_skin_light : liquid_glass_skin;
-    const Hcl p = hcl_of(seed);
-    const SkinTokens accent = scheme_md3(seed, light);
-    SkinTokens t = base;
-
-    const float film = light ? 0.30f : 0.45f;
-    auto f = [&](float tone) { return tone_of(p, film, tone); };
-    auto ink = [&](float tone) { return tone_of(p, 0.07f, tone); };
-
-    if (light) {
-        // A bright veil that carries a trace of the cover's hue.
-        t.lens_tint = f(97);
-        t.lens_tint_bright = t.lens_tint;
-        t.surface = f(95);              // Hwnd fallback / opaque fill
-        t.surface_high = f(92);
-        t.on_surface = ink(10);
-        t.on_surface_variant = ink(40);
-        t.card_fill_top = f(96);        // static frosted fallback
-        t.card_fill_bottom = f(92);
-    } else {
-        // A dark veil that carries a trace of the cover's hue, and the white veil
-        // the flipped (bright-backdrop) glass uses.
-        t.lens_tint = f(8);
-        t.lens_tint_bright = f(96);
-        t.surface = f(10);
-        t.surface_high = f(16);
-        t.on_surface = ink(96);
-        t.on_surface_variant = ink(78);
-        t.card_fill_top = f(12);
-        t.card_fill_bottom = f(7);
-    }
-
-    t.primary = accent.primary;
-    t.tertiary = accent.tertiary;
-    t.on_button_active = 0xFFFFFF;      // white glyph on the tinted capsule
-    return t;
-}
-
 // ------------------------------------------------------- album seed extraction
 // A small "what colour is this cover" pass: quantise to 24 hue bins, ignore
 // near-grey and near-black/white pixels (they carry no usable hue), then take

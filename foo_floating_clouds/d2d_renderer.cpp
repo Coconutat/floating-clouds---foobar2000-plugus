@@ -513,10 +513,11 @@ bool D2DRenderer::ensure_lens_material(const D2D1_RECT_F& card)
 
 void D2DRenderer::rebuild_tokens()
 {
-    m_use_dynamic = m_album && m_album_seed != 0;
+    // Liquid Glass takes its colour from the backdrop, never from the cover, so
+    // the album mode does not apply to it.
+    m_use_dynamic = m_album && m_album_seed != 0 && m_skin != FloatingSkin::LiquidGlass;
     if (m_use_dynamic) {
         m_tokens = (m_skin == FloatingSkin::Mist) ? dyn::scheme_mist(m_album_seed, m_light)
-                 : (m_skin == FloatingSkin::LiquidGlass) ? dyn::scheme_liquid_glass(m_album_seed, m_light)
                  : dyn::scheme_md3(m_album_seed, m_light);
     }
     // The flipped-glass ink depends on the new base tokens.

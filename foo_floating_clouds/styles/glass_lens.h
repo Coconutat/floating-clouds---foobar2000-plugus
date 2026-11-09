@@ -231,10 +231,10 @@ inline void sample3(const uint32_t* px, int w, int h, float x, float y,
 // ---------------------------------------------------------------------------
 // Silhouette: signed distance (px, positive inside) + outward unit normal.
 //
-// Two shapes, matching glass_card.h: a plain rounded rect (circular corners)
-// and a superellipse ("squircle") of exponent 5, which is what the glass skins
-// use. Both are exact enough inside the lens band, which is all this material
-// reads: the band is <= 20 px while the radius is >= 20 px.
+// Two shapes, matching glass_card.h: a plain rounded rect (circular corners) and
+// a rounded rect whose corners are superellipse arcs (exponent 5) inside the
+// corner radius, which is what the glass skins use. Both are exact enough inside
+// the lens band, which is all this material reads.
 // ---------------------------------------------------------------------------
 struct ShapeHit {
     float d = -1.0f;    // signed distance, positive inside
@@ -246,24 +246,32 @@ inline ShapeHit shape_at(float x, float y, float cx, float cy, float a, float b,
                          float rad, bool squircle, float squircle_n)
 {
     ShapeHit out;
-    if (squircle) {
-        const float X = (x - cx) / a;
-        const float Y = (y - cy) / b;
-        const float ax = std::fabs(X);
-        const float ay = std::fabs(Y);
-        const float ax2 = ax * ax, ay2 = ay * ay;
-        const float ax4 = ax2 * ax2, ay4 = ay2 * ay2;
-        const float F = ax4 * ax + ay4 * ay - 1.0f;
-        // Gradient of the implicit surface, then first-order distance and
-        // normal. Exact on the boundary, good enough just inside it.
-        float gx = squircle_n * ax4 * (X < 0.0f ? -1.0f : 1.0f) / a;
-        float gy = squircle_n * ay4 * (Y < 0.0f ? -1.0f : 1.0f) / b;
-        const float g = std::sqrt(gx * gx + gy * gy);
-        if (g < 1e-6f) { out.d = 1e3f; return out; }
-        out.nx = gx / g;
-        out.ny = gy / g;
-        out.d = -F / g;
-        return out;
+    if (squircle && rad > 1e-3f) {
+        // Continuous corner confined to a rad x rad box, exactly like
+        // glass_card.h: straight edges, |u|^n + |v|^n = 1 inside the corner.
+        // (A superellipse spanning the whole half-extents - |X|^n + |Y|^n = 1 -
+        // is NOT the same shape: with a 400x140 card it curves along the entire
+        // side and reads as a stadium, which is why the card looked like a pill.)
+        const float qx = std::fabs(x - cx) - (a - rad);
+        const float qy = std::fabs(y - cy) - (b - rad);
+        if (qx > 0.0f && qy > 0.0f) {
+            const float u = qx / rad;
+            const float v = qy / rad;
+            const float pu = std::pow(u, squircle_n - 1.0f);
+            const float pv = std::pow(v, squircle_n - 1.0f);
+            const float F = u * pu + v * pv - 1.0f;          // < 0 inside
+            const float sx = (x < cx ? -1.0f : 1.0f);
+            const float sy = (y < cy ? -1.0f : 1.0f);
+            const float gu = squircle_n * pu * sx / rad;
+            const float gv = squircle_n * pv * sy / rad;
+            const float g = std::sqrt(gu * gu + gv * gv);
+            if (g < 1e-6f) { out.d = 1e3f; return out; }
+            out.nx = gu / g;
+            out.ny = gv / g;
+            out.d = -F / g;                                   // positive inside
+            return out;
+        }
+        // Straight part of an edge: the rounded-rect distance is exact there.
     }
 
     const float qx = std::fabs(x - cx) - (a - rad);

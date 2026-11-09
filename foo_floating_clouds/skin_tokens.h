@@ -317,7 +317,9 @@ constexpr SkinTokens liquid_glass_skin = {
     0x000000, 0.40f,                 // card_rim_shade   lens needs a hard rim)
     0xFFFFFF, 0.16f, 0.30f,          // card_gloss
     0x000000, 0.12f, 0.82f,          // card_depth
-    28.0f,                           // corner_card
+    18.0f,                           // corner_card (a panel, not a pill: the
+                                     //  Dock and macOS windows sit well under
+                                     //  half the height)
     8.0f,                            // shadow_inset
     0.26f, 4,                        // ambient shadow
     0.14f, 1,                        // contact shadow
@@ -351,57 +353,3 @@ constexpr SkinTokens liquid_glass_skin = {
     0.90f,                           // lens_specular
 };
 
-// Liquid Glass (light): the same lens over a bright backdrop. The veil is white
-// and its gain is NEGATIVE - over an already-bright backdrop a white veil would
-// only wash the text out, so the material lifts the dark areas instead.
-constexpr SkinTokens liquid_glass_skin_light = {
-    0xF3F4F8,                        // surface (opaque fallback / Hwnd)
-    0xE9EAF0,                        // surface_high
-    0xDEE0E8,                        // surface_highest
-    0x101014,                        // on_surface
-    0x55555F,                        // on_surface_variant
-    0x007AFF,                        // primary (system blue, light)
-    0xFF2D55,                        // tertiary
-    0xFF3B30,                        // error
-    0xFFFFFF,                        // on_button_active
-    0x000000, 0.06f,                 // button_fill
-    0x007AFF, 0.85f,                 // button_fill_active (white glyph needs a
-                                     // solid enough accent under it)
-    0x000000, 0.14f,                 // progress_track
-    true,                            // glass (static fallback material)
-    true,                            // superellipse
-    0xFFFFFF, 0.90f,                 // card_fill_top (fallback only)
-    0xEDF1F7, 0.95f,                 // card_fill_bottom
-    0xFFFFFF, 0.80f,                 // card_rim_light
-    0x000000, 0.10f,                 // card_rim_shade
-    0xFFFFFF, 0.35f, 0.26f,          // card_gloss
-    0x000000, 0.05f, 0.86f,          // card_depth
-    28.0f,                           // corner_card
-    8.0f,                            // shadow_inset
-    0.16f, 4,                        // ambient shadow
-    0.10f, 1,                        // contact shadow
-    3.0f,                            // shadow_offset_y
-    0.08f,                           // hover_state
-    0.12f,                           // pressed_state
-    15.0f,                           // title_size
-    12.0f,                           // artist_size
-    10.0f,                           // small_size
-    true,                            // glass_backdrop
-    18.0f,                           // lens_width
-    10.0f,                           // lens_power
-    0.09f,                           // lens_dispersion
-    4.0f,                            // lens_frost
-    0xFFFFFF,                        // lens_tint (white veil: dark ink needs a
-    0.58f,                           // lens_tint_alpha    light card, always)
-    0.12f,                           // lens_tint_gain
-    1.08f,                           // lens_saturation
-    0.94f,                           // lens_alpha
-    false,                           // adaptive_ink (light glass never flips)
-    0.50f,                           // ink_threshold (unused)
-    0x101014,                        // on_surface_bright (same as on_surface)
-    0x55555F,                        // on_surface_variant_bright
-    0xFFFFFF,                        // lens_tint_bright (unused)
-    0.58f,                           // lens_tint_bright_alpha
-    0.12f,                           // lens_tint_bright_gain
-    0.75f,                           // lens_specular
-};
