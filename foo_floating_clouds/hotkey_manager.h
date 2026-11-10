@@ -30,9 +30,6 @@ public:
     
     Action handle_hotkey(WPARAM wParam);
 
-    // Update a specific hotkey
-    bool update_hotkey(HWND hwnd, uint32_t id, uint32_t modifiers, uint32_t vk);
-
     // Get current hotkey info
     struct HotkeyInfo {
         uint32_t modifiers;
@@ -59,18 +56,23 @@ private:
     struct RegisteredHotkey {
         uint32_t id;
         bool active;
+        uint32_t modifiers;
+        uint32_t vk;
     };
-    
+
+    // Only the live registrations are kept. The hotkey VALUES are read from cfg
+    // on demand (see read_hotkey) instead of being cached in cfg_int members:
+    // cfg_var_modern::cfg_int caches its value per instance (an atomic plus a
+    // once_flag), so a long-lived member keeps returning whatever it read first
+    // and silently ignores changes written by the Preferences page.
     std::vector<RegisteredHotkey> m_registered;
     HWND m_hwnd = nullptr;
-    
-    // Current values (backed by cfg_var)
-    cfg_var_modern::cfg_int m_drag_mod;
-    cfg_var_modern::cfg_int m_drag_vk;
-    cfg_var_modern::cfg_int m_vis_mod;
-    cfg_var_modern::cfg_int m_vis_vk;
-    cfg_var_modern::cfg_int m_style_mod;
-    cfg_var_modern::cfg_int m_style_vk;
-    cfg_var_modern::cfg_int m_skin_mod;
-    cfg_var_modern::cfg_int m_skin_vk;
+
+    // Reads a hotkey slot out of cfg through a fresh instance, the same way the
+    // rest of this component reads cfg.
+    static HotkeyInfo read_hotkey(int slot);
+
+    // Slot <-> id helpers so registration and reporting share one table.
+    static const wchar_t* slot_name(int slot);
+    bool register_slot(HWND hwnd, uint32_t id, int slot);
 };
